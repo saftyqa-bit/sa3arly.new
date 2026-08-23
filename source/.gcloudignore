@@ -1,0 +1,17 @@
+.gcloudignore
+.git
+.gitignore
+.pytest_cache
+.ruff_cache
+**/__pycache__/**
+**/*.pyc
+data/
+frontend/
+tests/
+*.zip
+BUILD_REPORT_AR.md
+RELEASE_NOTES_AR.md
+SITE_DEPLOYMENT_AR.md
+
+# Google GitHub Actions temporary credentials
+gha-creds-*.json

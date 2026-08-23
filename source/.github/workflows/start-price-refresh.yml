@@ -1,0 +1,163 @@
+name: Start production price refresh
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Cairo is UTC+2 or UTC+3. The second invocation is an idempotent fallback.
+    - cron: "5 7,8,17,18 * * *"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: sa3arly-price-refresh-start
+  cancel-in-progress: false
+
+env:
+  PROJECT_ID: sa3arly-prod-972741
+  REGION: europe-west1
+  API_SERVICE: sa3arly-api
+  WORKER_SERVICE: sa3arly-worker
+  PRICE_QUEUE: sa3arly-scrape
+  WORKER_MAX_INSTANCES: "48"
+  WORKER_CONTAINER_CONCURRENCY: "2"
+  PRICE_MAX_DISPATCHES_PER_SECOND: "12"
+  PRICE_MAX_CONCURRENT_DISPATCHES: "80"
+  PRICE_START_JOB: sa3arly-price-refresh-start
+  PRICE_FORCE_JOB: sa3arly-price-refresh-force-start
+  MAX_URL_GROUPS_PER_RUN: "50000"
+
+jobs:
+  start:
+    name: Start the next approved price slot independently
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    environment: production
+    steps:
+      - id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v3
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          version: ">= 540.0.0"
+
+      - id: before
+        name: Select the control job and record the current run
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            control_job="$PRICE_FORCE_JOB"
+          else
+            control_job="$PRICE_START_JOB"
+          fi
+          gcloud run services update "$WORKER_SERVICE" \
+            --project="$PROJECT_ID" --region="$REGION" \
+            --max="$WORKER_MAX_INSTANCES" \
+            --concurrency="$WORKER_CONTAINER_CONCURRENCY" \
+            --update-env-vars="DB_POOL_MIN=1,DB_POOL_MAX=2" --quiet
+          gcloud tasks queues update "$PRICE_QUEUE" \
+            --project="$PROJECT_ID" --location="$REGION" \
+            --max-dispatches-per-second="$PRICE_MAX_DISPATCHES_PER_SECOND" \
+            --max-concurrent-dispatches="$PRICE_MAX_CONCURRENT_DISPATCHES" \
+            --quiet
+          gcloud run jobs update "$control_job" \
+            --project="$PROJECT_ID" --region="$REGION" \
+            --update-env-vars="MAX_URL_GROUPS_PER_RUN=$MAX_URL_GROUPS_PER_RUN" \
+            --quiet
+          api_url="$(gcloud run services describe "$API_SERVICE" \
+            --project="$PROJECT_ID" --region="$REGION" \
+            --format='value(status.url)')"
+          [[ "$api_url" == https://* ]]
+          status_json="$(curl --fail --silent --show-error --retry 5 \
+            --retry-delay 2 --max-time 30 "${api_url}/api/v1/status")"
+          previous_run_id="$(jq -r '.latest_price_run_id // empty' <<<"$status_json")"
+          previous_run_status="$(jq -r '.latest_price_run_status // empty' <<<"$status_json")"
+          echo "api_url=$api_url" >> "$GITHUB_OUTPUT"
+          echo "previous_run_id=$previous_run_id" >> "$GITHUB_OUTPUT"
+          echo "previous_run_status=$previous_run_status" >> "$GITHUB_OUTPUT"
+          echo "control_job=$control_job" >> "$GITHUB_OUTPUT"
+          echo "PREVIOUS_PRICE_REFRESH_RUN_ID=${previous_run_id:-none}"
+
+      - name: Start the refresh outside the saturated worker service
+        run: |
+          set -euo pipefail
+          gcloud run jobs execute "${{ steps.before.outputs.control_job }}" \
+            --project="$PROJECT_ID" --region="$REGION" --wait
+
+      - name: Verify the new production run
+        env:
+          API_URL: ${{ steps.before.outputs.api_url }}
+          PREVIOUS_RUN_ID: ${{ steps.before.outputs.previous_run_id }}
+          PREVIOUS_RUN_STATUS: ${{ steps.before.outputs.previous_run_status }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 12); do
+            status_json="$(curl --fail --silent --show-error --retry 3 \
+              --retry-delay 2 --max-time 30 "${API_URL}/api/v1/status")"
+            run_id="$(jq -r '.latest_price_run_id // empty' <<<"$status_json")"
+            run_status="$(jq -r '.latest_price_run_status // empty' <<<"$status_json")"
+            queued_tasks="$(jq -r '.latest_price_run_queued_tasks // 0' <<<"$status_json")"
+            if [[ -n "$run_id" \
+              && ( "$run_id" != "$PREVIOUS_RUN_ID" \
+                || "$PREVIOUS_RUN_STATUS" == "enqueue_failed" ) \
+              && "$queued_tasks" -gt 0 \
+              && "$run_status" =~ ^(created|enqueuing|queued|running)$ ]]; then
+              echo "PRICE_REFRESH_RUN_ID=$run_id"
+              echo "PRICE_REFRESH_STATUS=$run_status"
+              echo "PRICE_REFRESH_QUEUED_TASKS=$queued_tasks"
+              if [[ "$run_id" == "$PREVIOUS_RUN_ID" ]]; then
+                echo "PRICE_REFRESH_RESUMED=true"
+              fi
+              exit 0
+            fi
+            if [[ -n "$run_id" && "$run_id" == "$PREVIOUS_RUN_ID" \
+              && "$queued_tasks" -gt 0 \
+              && "$run_status" =~ ^(created|enqueuing|queued|running)$ ]]; then
+              echo "PRICE_REFRESH_SLOT=ALREADY_PRESENT"
+              echo "PRICE_REFRESH_RUN_ID=$run_id"
+              echo "PRICE_REFRESH_STATUS=$run_status"
+              exit 0
+            fi
+            if [[ -n "$run_id" && "$run_id" == "$PREVIOUS_RUN_ID" \
+              && "$run_status" =~ ^(completed|completed_with_errors|cancelled)$ ]]; then
+              echo "PRICE_REFRESH_SLOT=ALREADY_COMPLETE"
+              echo "PRICE_REFRESH_RUN_ID=$run_id"
+              echo "PRICE_REFRESH_STATUS=$run_status"
+              exit 0
+            fi
+            echo "Waiting for the new run: attempt=$attempt id=${run_id:-none} status=${run_status:-none} queued=$queued_tasks"
+            sleep 5
+          done
+          echo "$status_json" | jq .
+          echo "An active price refresh run was not visible after the job completed." >&2
+          exit 1
+
+      - name: Print bounded Cloud Run execution diagnostics
+        if: failure()
+        env:
+          CONTROL_JOB: ${{ steps.before.outputs.control_job }}
+        run: |
+          set +e
+          execution_name="$(gcloud run jobs executions list \
+            --job="$CONTROL_JOB" --project="$PROJECT_ID" --region="$REGION" \
+            --sort-by='~metadata.creationTimestamp' --limit=1 \
+            --format='value(metadata.name)')"
+          echo "PRICE_REFRESH_EXECUTION=${execution_name:-not-found}"
+          if [[ -n "$execution_name" ]]; then
+            gcloud run jobs executions describe "$execution_name" \
+              --project="$PROJECT_ID" --region="$REGION" --format=json
+            task_name="$(gcloud run jobs executions tasks list \
+              --execution="$execution_name" --project="$PROJECT_ID" \
+              --region="$REGION" --limit=1 --format='value(metadata.name)')"
+            echo "PRICE_REFRESH_EXECUTION_TASK=${task_name:-not-found}"
+            if [[ -n "$task_name" ]]; then
+              gcloud run jobs executions tasks describe "$task_name" \
+                --project="$PROJECT_ID" --region="$REGION" --format=json
+            fi
+          fi

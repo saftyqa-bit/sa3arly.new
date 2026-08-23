@@ -1,0 +1,73 @@
+.phase-two-listing-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.phase-two-product-card {
+  display: grid;
+  align-content: stretch;
+  border: 1px solid #dbe3ec;
+  border-radius: 18px;
+  background: #fff;
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, .05);
+}
+.phase-two-product-link {
+  display: grid;
+  gap: .6rem;
+  padding: 1rem;
+  color: inherit;
+  text-decoration: none;
+}
+.phase-two-product-link > span { color: #1456c0; font-size: .77rem; font-weight: 800; }
+.phase-two-product-link > b { font-size: 1.03rem; line-height: 1.5; }
+.listing-price-line { display: grid; gap: .15rem; padding: .7rem; border-radius: 12px; background: #f5f8fb; }
+.listing-price-line strong { color: #102f5e; font-size: 1.35rem; }
+.listing-price-line small { color: #64748b; }
+.listing-purchase-label { justify-self: start; padding: .35rem .55rem; border-radius: 999px; background: #e8f7ef; color: #047857; font-style: normal; font-size: .76rem; font-weight: 800; }
+.listing-review-label { justify-self: start; padding: .35rem .55rem; border-radius: 999px; background: #fff7ed; color: #9a3412; font-style: normal; font-size: .76rem; font-weight: 800; }
+.listing-sparkline { width: 100%; height: 64px; }
+.listing-sparkline polyline { stroke: #1456c0; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.listing-sparkline-empty { display: grid; place-items: center; min-height: 64px; border: 1px dashed #dbe3ec; border-radius: 10px; color: #64748b; font-size: .75rem; }
+.listing-open-link { color: #1456c0; font-style: normal; font-weight: 800; }
+.listing-compare-button { margin: auto .8rem .8rem; border: 1px solid #8ab6ef; border-radius: 10px; background: #fff; color: #1456c0; padding: .6rem .8rem; font-weight: 800; cursor: pointer; }
+.listing-compare-button:hover { background: #ebf3ff; }
+
+.product-decision-enhancer {
+  display: grid;
+  gap: 1rem;
+  max-width: 1180px;
+  margin: 1.25rem auto 3rem;
+  padding: 0 1rem;
+}
+.product-decision-intro { padding: 1.1rem; border: 1px solid #dbe3ec; border-radius: 18px; background: linear-gradient(135deg, #f8fbff, #f3fff8); }
+.product-decision-intro span { color: #1456c0; font-size: .8rem; font-weight: 800; }
+.product-decision-intro h2 { margin: .25rem 0 .35rem; }
+.product-decision-intro p { margin: 0; color: #64748b; }
+
+.store-quality-overview { display: grid; gap: 1rem; padding: 1rem; border: 1px solid #dbe3ec; border-radius: 20px; background: #fff; }
+.store-quality-overview.loading { text-align: center; color: #64748b; }
+.store-quality-overview > header { display: flex; justify-content: space-between; gap: 1rem; align-items: end; }
+.store-quality-overview > header span { color: #1456c0; font-size: .78rem; font-weight: 800; }
+.store-quality-overview > header h2 { margin: .2rem 0 0; }
+.store-quality-overview > header p { max-width: 480px; margin: 0; color: #64748b; }
+.store-quality-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .8rem; }
+.store-quality-grid article { display: grid; gap: .8rem; padding: .85rem; border: 1px solid #dbe3ec; border-radius: 15px; background: #f8fafc; }
+.store-quality-name { display: flex; justify-content: space-between; gap: .7rem; }
+.store-quality-name small { color: #64748b; }
+.store-quality-grid dl { display: grid; gap: .45rem; margin: 0; }
+.store-quality-grid dl > div { display: grid; grid-template-columns: minmax(130px, .8fr) 1.2fr; gap: .7rem; align-items: center; }
+.store-quality-grid dt { font-size: .78rem; color: #475569; }
+.store-quality-grid dd { display: grid; grid-template-columns: minmax(70px, 1fr) auto; gap: .5rem; align-items: center; margin: 0; }
+.store-quality-grid meter { width: 100%; height: .7rem; }
+.store-quality-grid dd b { font-size: .75rem; }
+.store-quality-grid dd span { color: #94a3b8; font-size: .73rem; }
+.quality-method-note { margin: 0; color: #64748b; font-size: .78rem; }
+
+@media (max-width: 960px) {
+  .phase-two-listing-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 720px) {
+  .phase-two-listing-grid,
+  .store-quality-grid { grid-template-columns: 1fr; }
+  .store-quality-overview > header { display: grid; }
+}

@@ -1,0 +1,50 @@
+{
+  "generated_at": "2026-07-30T11:52:43.134141+00:00",
+  "source_workbook": "s3arha_cash_installment_tables_POPULATED_from_uploaded_files_2026-07-30.xlsx",
+  "counts": {
+    "product_variants": 2471,
+    "mapped_product_variants": 2356,
+    "awaiting_mapping_variants": 115,
+    "stores": 216,
+    "stores_with_current_mappings": 14,
+    "store_product_mappings": 2360,
+    "initial_cash_offer_rows": 2360,
+    "installment_discovery_tasks": 2360,
+    "initial_unique_store_url_groups": 1130,
+    "known_variant_aliases": 4
+  },
+  "url_type_counts": {
+    "صفحة فئة": 893,
+    "رابط منتج مباشر": 504,
+    "Sitemap/قائمة روابط": 221,
+    "صفحة فئة منظمة": 293,
+    "تغذية منتجات": 402,
+    "قائمة منتجات": 19,
+    "مصدر عام": 28
+  },
+  "cash_mapping_store_counts": {
+    "EG-013": 1159,
+    "EG-079": 221,
+    "EG-010": 25,
+    "EG-011": 20,
+    "EG-012": 95,
+    "EG-084": 2,
+    "EG-172": 29,
+    "EG-050": 18,
+    "EG-124": 25,
+    "EG-127": 12,
+    "EG-060": 312,
+    "EG-063": 402,
+    "EG-017": 38,
+    "EG-053": 2
+  },
+  "refresh_schedule": {
+    "cron": "0 * * * *",
+    "timezone": "Africa/Cairo",
+    "frequency": "hourly",
+    "stagger_minutes": 45,
+    "freshness_minutes": 75,
+    "stale_after_minutes": 150,
+    "initial_url_groups_per_run": 1130
+  }
+}

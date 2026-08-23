@@ -1,0 +1,11 @@
+{
+  "schedulers": {
+    "sa3arly-hourly-refresh": "PAUSED",
+    "sa3arly-catalog-discovery": "PAUSED",
+    "sa3arly-price-run-finalizer": "PAUSED"
+  },
+  "queues": {
+    "sa3arly-scrape": "PAUSED",
+    "sa3arly-catalog-discovery": "PAUSED"
+  }
+}

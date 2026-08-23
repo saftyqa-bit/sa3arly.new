@@ -1,0 +1,141 @@
+name: Deploy production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  issues: write
+
+concurrency:
+  group: sa3arly-production
+  cancel-in-progress: false
+
+env:
+  PROJECT_ID: sa3arly-prod-972741
+  REGION: europe-west1
+  REPOSITORY: sa3arly
+  DB_INSTANCE: sa3arly-postgres
+  DB_SECRET: sa3arly-database-url
+
+jobs:
+  validate:
+    uses: ./.github/workflows/verify.yml
+
+  deploy:
+    name: Backup, migrate, deploy, verify
+    needs: validate
+    if: ${{ vars.AUTONOMOUS_DEPLOY_ENABLED == 'true' || github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[force-deploy]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify required deployment variables
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}" || {
+            echo "GCP_WORKLOAD_IDENTITY_PROVIDER is not configured"
+            exit 1
+          }
+          test -n "${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}" || {
+            echo "GCP_DEPLOY_SERVICE_ACCOUNT is not configured"
+            exit 1
+          }
+
+      - id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v3
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          version: ">= 540.0.0"
+
+      - name: Confirm deployment identity
+        run: |
+          set -euo pipefail
+          gcloud auth list --filter=status:ACTIVE --format='value(account)'
+          gcloud config set project "$PROJECT_ID"
+
+      - name: Deploy product-centric backend safely
+        env:
+          RELEASE_ID: github-${{ github.run_number }}-${{ github.sha }}
+          IMAGE_BUILD_MODE: local
+        run: |
+          set -o pipefail
+          bash DEPLOY_PRODUCT_CENTRIC_V0_6_1.sh 2>&1 \
+            | tee "$RUNNER_TEMP/sa3arly-backend-deploy.log"
+
+      - name: Deploy isolated Next.js web preview
+        env:
+          RELEASE_ID: github-${{ github.run_number }}-${{ github.sha }}
+          SA3ARLY_ADMIN_EMAILS: ${{ vars.SA3ARLY_ADMIN_EMAILS }}
+          SA3ARLY_INTERNAL_TOKEN_ENABLED: ${{ vars.SA3ARLY_INTERNAL_TOKEN_ENABLED }}
+        run: bash scripts/deploy_web_cloud_run.sh
+
+      - name: Restore collection runtime without creating an overlapping price run
+        env:
+          START_PRICE_REFRESH: "0"
+        run: bash scripts/ensure_price_collection_runtime.sh
+
+      - name: Record deployed revisions
+        if: always()
+        run: |
+          gcloud run services describe sa3arly-api \
+            --project="$PROJECT_ID" --region="$REGION" \
+            --format='yaml(status.latestReadyRevisionName,status.traffic)' || true
+          gcloud run services describe sa3arly-worker \
+            --project="$PROJECT_ID" --region="$REGION" \
+            --format='yaml(status.latestReadyRevisionName,status.traffic)' || true
+          gcloud run services describe sa3arly-web \
+            --project="$PROJECT_ID" --region="$REGION" \
+            --format='yaml(status.url,status.latestReadyRevisionName,status.traffic)' || true
+
+      - name: Publish actionable failure report
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          report="$RUNNER_TEMP/sa3arly-deployment-failure.md"
+          {
+            echo "Automated production deployment report."
+            echo
+            echo "Commit: $GITHUB_SHA"
+            echo "Run: https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo
+            echo '```text'
+            if [[ -f "$RUNNER_TEMP/sa3arly-backend-deploy.log" ]]; then
+              tail -n 180 "$RUNNER_TEMP/sa3arly-backend-deploy.log"
+            else
+              echo "The deployment failed before the backend deployment log was created."
+            fi
+            echo '```'
+          } > "$report"
+          title="Production deployment failed: run $GITHUB_RUN_NUMBER"
+          issue_number="$(
+            gh issue list --repo "$GITHUB_REPOSITORY" --state all \
+              --search "$GITHUB_RUN_NUMBER in:title" --limit 100 \
+              --json number,title \
+              | jq -r --arg title "$title" \
+                'map(select(.title == $title)) | first | .number // empty'
+          )"
+          if [[ -n "$issue_number" ]]; then
+            gh issue reopen "$issue_number" --repo "$GITHUB_REPOSITORY" || true
+            gh issue edit "$issue_number" \
+              --repo "$GITHUB_REPOSITORY" \
+              --body-file "$report"
+          else
+            gh issue create \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$title" \
+              --body-file "$report"
+          fi

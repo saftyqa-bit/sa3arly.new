@@ -1,0 +1,21 @@
+.env
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.pytest-tmp/
+.pytest-core-v2-*/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.log
+.DS_Store
+.firebase/
+.wrangler/
+data/runtime/
+.codex-pglite-*/
+
+# Google GitHub Actions temporary credentials
+gha-creds-*.json

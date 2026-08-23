@@ -1,0 +1,23 @@
+نقل سعرلي إلى PostgreSQL والتحديث كل ساعة
+=============================================
+
+المشروع: sa3arly-prod-972741
+
+1) افتح Google Cloud Shell وارفع sa3arly-hourly-v0.4.11.zip.
+2) نفّذ:
+
+unzip -q sa3arly-hourly-v0.4.11.zip
+cd sa3arly-hourly-v0.4.11
+HOURLY_CUTOVER_CONFIRMED=1 bash ENABLE_HOURLY_COLLECTION.sh
+
+الإصلاح لا يعيد إنشاء PostgreSQL ولا يحذف المهام. ينشر الإصدار الساعي، ينهي
+الطابور القديم، ثم يشغل Queue وScheduler ويطلق دورة فورية.
+
+3) أرسل المخرجات التي تبدأ من HOURLY_API_PREFLIGHT وتنتهي عند HOURLY_CUTOVER.
+
+4) بعد انتهاء الدورة الفورية نفّذ:
+
+bash VERIFY_HOURLY_COLLECTION.sh
+
+الجدول النهائي: عند بداية كل ساعة بتوقيت Africa/Cairo.
+لا ترسل أي Password أو Token أو Secret.

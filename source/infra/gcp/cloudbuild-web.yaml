@@ -1,0 +1,11 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --file=sites-frontend-v13/Dockerfile
+      - --tag=${_IMAGE}
+      - sites-frontend-v13
+images:
+  - ${_IMAGE}
+options:
+  logging: CLOUD_LOGGING_ONLY

@@ -1,0 +1,476 @@
+Folder PATH listing for volume OS
+Volume serial number is D2C2-1F17
+C:.
+|   DESIGN_REFERENCE.md
+|   folder_tree.txt
+|   MANIFEST.sha256
+|   README_AR.md
+|   
++---database
+|       manifest.json
+|       sa3arly-production-data.zip
+|       
++---operations
+|       sa3arly-cloud-sql-backup.json
+|       sa3arly-runtime-stop-report.json
+|       source-commit.txt
+|       
+\---source
+    |   .dockerignore
+    |   .env.example
+    |   .firebaserc.example
+    |   .gcloudignore
+    |   .gitignore
+    |   ACTIVATE_CATALOG_DISCOVERY.sh
+    |   AUTONOMOUS_BOOTSTRAP_COMMAND_AR.txt
+    |   BTECH_AMBIGUITY_FIX_NOTES_AR.md
+    |   BTECH_MATCH_FIX_NOTES_AR.md
+    |   BTECH_Q11I_PRICE_GUARD_NOTES_AR.md
+    |   BTECH_SKU_FIX_NOTES_AR.md
+    |   BTECH_STRUCTURED_PRICE_FIX_NOTES_AR.md
+    |   BUILD_REPORT_AR.md
+    |   CATALOG_DISCOVERY_RELEASE_NOTES_AR.md
+    |   CATALOG_HOTFIX_V0_5_1_RELEASE_NOTES_AR.md
+    |   CLOUD_SHELL_STEPS_AR.txt
+    |   DEPLOYMENT_INPUTS_AR.txt
+    |   DEPLOY_AND_START_SA3ARLY.sh
+    |   DEPLOY_BTECH_Q11I_PRICE_GUARD_WORKER.sh
+    |   DEPLOY_BTECH_STRUCTURED_PRICE_FIX_WORKER.sh
+    |   DEPLOY_CATALOG_DISCOVERY.sh
+    |   DEPLOY_CATALOG_HOTFIX_V0_5_1.sh
+    |   DEPLOY_PARSED_CACHE_VERSION_GUARD_WORKER.sh
+    |   DEPLOY_PRODUCT_CENTRIC_V0_6_0.sh
+    |   DEPLOY_PRODUCT_CENTRIC_V0_6_1.sh
+    |   DEPLOY_RUN_PAGINATION_API_ONLY.sh
+    |   DEPLOY_SA3ARLY_CLOUD_SHELL.sh
+    |   docker-compose.yml
+    |   Dockerfile.api
+    |   Dockerfile.worker
+    |   ENABLE_HOURLY_COLLECTION.sh
+    |   firebase.json
+    |   firestore.indexes.json
+    |   firestore.rules
+    |   GITHUB_AUTOMATION_SETUP_AR.md
+    |   HOURLY_RELEASE_NOTES_AR.md
+    |   IMPLEMENTATION_REPORT_AR.md
+    |   INSTALLMENT_WARRANTY_GUARD_NOTES_AR.md
+    |   LATEST_DEPLOYMENT_AR.md
+    |   Makefile
+    |   MANIFEST_SHA256.txt
+    |   PARSED_CACHE_VERSION_GUARD_NOTES_AR.md
+    |   PRODUCT_CENTRIC_V0_6_0_RELEASE_NOTES_AR.md
+    |   pyproject.toml
+    |   README.md
+    |   README_AR.md
+    |   RELEASE_NOTES_AR.md
+    |   RELEASE_NOTES_V0_6_1_AR.md
+    |   REPAIR_CURRENT_COLLISION_RUN.sh
+    |   requirements-base.txt
+    |   requirements-dev.txt
+    |   requirements-worker.txt
+    |   RUN_PAGINATION_FIX_NOTES_AR.md
+    |   SITE_DEPLOYMENT_AR.md
+    |   START_SA3ARLY_COLLECTION.sh
+    |   uv.lock
+    |   VALIDATION_REPORT_V0_6_1_AR.md
+    |   VERIFY_CATALOG_DISCOVERY.sh
+    |   VERIFY_HOURLY_COLLECTION.sh
+    |   
+    +---.github
+    |   |   AUTOMATION_STATUS.md
+    |   |   dependabot.yml
+    |   |   PREVIEW_DEPLOY_TRIGGER
+    |   |   
+    |   \---workflows
+    |           ci.yml
+    |           deploy-production.yml
+    |           deploy-web-preview.yml
+    |           diagnose-catalog-typeerror.yml
+    |           finalize-price-runs.yml
+    |           import-catalog-bootstrap.yml
+    |           inspect-catalog-scheduler.yml
+    |           inspect-price-queue.yml
+    |           inspect-price-run-details.yml
+    |           observe-production-data.yml
+    |           pause-and-export-production.yml
+    |           recover-catalog-deliveries.yml
+    |           retry-failed-price-tasks.yml
+    |           start-catalog-refresh.yml
+    |           start-price-refresh.yml
+    |           verify.yml
+    |           
+    +---app
+    |   |   catalog.py
+    |   |   catalog_bootstrap.py
+    |   |   catalog_identity.py
+    |   |   catalog_matching.py
+    |   |   catalog_recovery.py
+    |   |   db.py
+    |   |   decision_engine.py
+    |   |   decision_engine_runtime.py
+    |   |   firestore_repository.py
+    |   |   hourly.py
+    |   |   logging_config.py
+    |   |   main.py
+    |   |   priced_products.py
+    |   |   public_stores.py
+    |   |   repository.py
+    |   |   repository_provider.py
+    |   |   routes_internal.py
+    |   |   routes_public.py
+    |   |   schedule.py
+    |   |   schemas.py
+    |   |   security.py
+    |   |   settings.py
+    |   |   store_quality.py
+    |   |   store_quality_runtime.py
+    |   |   tasks_client.py
+    |   |   __init__.py
+    |   |   
+    |   \---scraping
+    |           catalog_discovery.py
+    |           document.py
+    |           engine.py
+    |           fetcher.py
+    |           installments.py
+    |           matching.py
+    |           normalization.py
+    |           robots.py
+    |           secure_fetcher.py
+    |           types.py
+    |           __init__.py
+    |           
+    +---data
+    |       s3arha_cash_installment_tables_POPULATED_from_uploaded_files_2026-07-30.xlsx
+    |       
+    +---db
+    |   +---migrations
+    |   |       001_sa3arly_core_v2.sql
+    |   |       
+    |   \---seed
+    |           connector_configs.csv
+    |           current_cash_offers.csv
+    |           installment_discovery_tasks.csv
+    |           operational_mapping_ids.csv
+    |           production_ready_mapping_ids.csv
+    |           product_variants.csv
+    |           seed_metadata.json
+    |           stores.csv
+    |           store_product_mappings.csv
+    |           variant_aliases.csv
+    |           
+    +---docs
+    |   |   ADR_0010_UNIFIED_CATALOG_OBSERVATIONS.md
+    |   |   ADR_0011_SA3ARLY_CORE_V2_DATABASE.md
+    |   |   ARCHITECTURE_AR.md
+    |   |   DATABASE_PRODUCT_MODEL_AR.md
+    |   |   FIRESTORE_DEPLOYMENT_AR.md
+    |   |   PHASE_2_DECISION_ENGINE_AR.md
+    |   |   STORE_CONNECTOR_GUIDE_AR.md
+    |   |   TECHNICAL_REVIEW_S1_S8.md
+    |   |   
+    |   \---previews
+    |           admin-dashboard-preview.html
+    |           sa3arly-admin-dashboard-preview.png
+    |           
+    +---infra
+    |   +---cloudflare
+    |   |   |   README_AR.md
+    |   |   |   wrangler.jsonc
+    |   |   |   
+    |   |   +---src
+    |   |   |       index.mjs
+    |   |   |       
+    |   |   \---test
+    |   |           proxy.test.mjs
+    |   |           
+    |   \---gcp
+    |           cloudbuild-api.yaml
+    |           cloudbuild-web.yaml
+    |           cloudbuild-worker.yaml
+    |           deploy-firestore.sh
+    |           deploy.sh
+    |           deploy_legacy_impl.sh
+    |           destroy.sh
+    |           README_AR.md
+    |           
+    +---scripts
+    |       apply_migrations.py
+    |       bootstrap_autonomous_delivery.sh
+    |       bootstrap_db.py
+    |       bootstrap_firestore.py
+    |       bootstrap_github_wif.sh
+    |       cloud_sql_user_password.py
+    |       copy_legacy_postgres_to_core_v2.py
+    |       create_github_repo_and_push.sh
+    |       dedupe_known_variants.py
+    |       deploy_web_cloud_run.sh
+    |       ensure_price_collection_runtime.sh
+    |       export_database_http.py
+    |       finalize_price_runs_job.py
+    |       generate_operational_allowlist.py
+    |       generate_production_allowlist.py
+    |       import_catalog_bootstrap.py
+    |       local_scheduler.py
+    |       migrate_firestore_runtime_to_postgres.py
+    |       reconcile_catalog_candidates.py
+    |       reconcile_catalog_http.py
+    |       reconcile_catalog_job.py
+    |       reset_failed_catalog_canary_sources.py
+    |       retry_failed_price_tasks_job.py
+    |       run_hourly_local.py
+    |       start_price_refresh_job.py
+    |       verify_catalog_discovery_readiness.py
+    |       verify_hourly_capacity.py
+    |       verify_launch_readiness.py
+    |       verify_seed.py
+    |       
+    +---sites-frontend-v13
+    |   |   .dockerignore
+    |   |   .env.production.example
+    |   |   .gitignore
+    |   |   .npmrc
+    |   |   Dockerfile
+    |   |   next.config.ts
+    |   |   package-lock.json
+    |   |   package.json
+    |   |   postcss.config.mjs
+    |   |   README.md
+    |   |   tsconfig.json
+    |   |   
+    |   +---app
+    |   |   |   brand-system.tsx
+    |   |   |   catalog-data.json
+    |   |   |   catalog-selectors.ts
+    |   |   |   category-taxonomy.ts
+    |   |   |   chatgpt-auth.ts
+    |   |   |   cloud-run-auth.ts
+    |   |   |   comparison-landing.tsx
+    |   |   |   comparison-redesign.css
+    |   |   |   decision-panel.tsx
+    |   |   |   decision-preference-restorer.tsx
+    |   |   |   decision-types.ts
+    |   |   |   display-names.ts
+    |   |   |   experience-redesign.css
+    |   |   |   globals.css
+    |   |   |   info-page.tsx
+    |   |   |   layout.tsx
+    |   |   |   listing-compare-button.tsx
+    |   |   |   live-data.ts
+    |   |   |   page.tsx
+    |   |   |   phase-two-extra.css
+    |   |   |   phase-two.css
+    |   |   |   price-explorer-v2.tsx
+    |   |   |   price-explorer.tsx
+    |   |   |   pricena-inspired.css
+    |   |   |   product-compare-drawer.tsx
+    |   |   |   product-decision-enhancer.tsx
+    |   |   |   product-links.tsx
+    |   |   |   product-schema.ts
+    |   |   |   public-shell.tsx
+    |   |   |   seo-data.ts
+    |   |   |   sitemap-utils.ts
+    |   |   |   store-quality-overview.tsx
+    |   |   |   verification.ts
+    |   |   |   visual-system.css
+    |   |   |   
+    |   |   +---admin
+    |   |   |       actions.ts
+    |   |   |       admin-auth.ts
+    |   |   |       admin-data.ts
+    |   |   |       page.tsx
+    |   |   |       review-decision-form.tsx
+    |   |   |       
+    |   |   +---api
+    |   |   |   \---live
+    |   |   |       |   proxy.ts
+    |   |   |       |   
+    |   |   |       +---alerts
+    |   |   |       |       route.ts
+    |   |   |       |       
+    |   |   |       +---compare
+    |   |   |       |       route.ts
+    |   |   |       |       
+    |   |   |       +---products
+    |   |   |       |   \---[variantId]
+    |   |   |       |       +---comparison
+    |   |   |       |       |       route.ts
+    |   |   |       |       |       
+    |   |   |       |       \---decision
+    |   |   |       |               route.ts
+    |   |   |       |               
+    |   |   |       +---reports
+    |   |   |       |       route.ts
+    |   |   |       |       
+    |   |   |       +---search
+    |   |   |       |       route.ts
+    |   |   |       |       
+    |   |   |       +---share
+    |   |   |       |       route.ts
+    |   |   |       |       
+    |   |   |       +---status
+    |   |   |       |       route.ts
+    |   |   |       |       
+    |   |   |       \---stores
+    |   |   |               route.ts
+    |   |   |               
+    |   |   +---bot
+    |   |   |       page.tsx
+    |   |   |       
+    |   |   +---brands
+    |   |   |   |   page.tsx
+    |   |   |   |   
+    |   |   |   \---[slug]
+    |   |   |           page.tsx
+    |   |   |           
+    |   |   +---c
+    |   |   |   \---[slug]
+    |   |   |           page.tsx
+    |   |   |           
+    |   |   +---cash
+    |   |   |       page.tsx
+    |   |   |       
+    |   |   +---categories
+    |   |   |   |   page.tsx
+    |   |   |   |   
+    |   |   |   \---[slug]
+    |   |   |           page.tsx
+    |   |   |           
+    |   |   +---contact
+    |   |   |       page.tsx
+    |   |   |       
+    |   |   +---installments
+    |   |   |       page.tsx
+    |   |   |       
+    |   |   +---methodology
+    |   |   |       page.tsx
+    |   |   |       
+    |   |   +---privacy
+    |   |   |       page.tsx
+    |   |   |       
+    |   |   +---products
+    |   |   |   \---[slug]
+    |   |   |       |   layout.tsx
+    |   |   |       |   page.tsx
+    |   |   |       |   
+    |   |   |       \---image
+    |   |   |               route.ts
+    |   |   |               
+    |   |   +---robots.txt
+    |   |   |       route.ts
+    |   |   |       
+    |   |   +---sitemap-brands.xml
+    |   |   |       route.ts
+    |   |   |       
+    |   |   +---sitemap-categories.xml
+    |   |   |       route.ts
+    |   |   |       
+    |   |   +---sitemap-products.xml
+    |   |   |       route.ts
+    |   |   |       
+    |   |   +---sitemap-stores.xml
+    |   |   |       route.ts
+    |   |   |       
+    |   |   +---sitemap.xml
+    |   |   |       route.ts
+    |   |   |       
+    |   |   +---stores
+    |   |   |   |   page.tsx
+    |   |   |   |   
+    |   |   |   \---[slug]
+    |   |   |           page.tsx
+    |   |   |           
+    |   |   \---terms
+    |   |           page.tsx
+    |   |           
+    |   +---drizzle
+    |   |   \---meta
+    |   |           _journal.json
+    |   |           
+    |   +---public
+    |   |       favicon.svg
+    |   |       file.svg
+    |   |       globe.svg
+    |   |       og-image.png
+    |   |       og-image.svg
+    |   |       window.svg
+    |   |       
+    |   +---scripts
+    |   |       build-verified.sh
+    |   |       generate-catalog.py
+    |   |       import-selected-sectors-workbook.py
+    |   |       install-ci.sh
+    |   |       sites-env.sh
+    |   |       test-rendered-contracts.sh
+    |   |       validate-artifact.sh
+    |   |       
+    |   \---tests
+    |           phase-two-rendered.test.mjs
+    |           rendered-html.test.mjs
+    |           s1-s8-rendered.test.mjs
+    |           
+    +---tests
+    |       fake_firestore.py
+    |       test_bot_policy.py
+    |       test_catalog_bootstrap.py
+    |       test_catalog_bootstrap_import.py
+    |       test_catalog_discovery.py
+    |       test_catalog_hydration_priority.py
+    |       test_catalog_identity.py
+    |       test_catalog_matching.py
+    |       test_catalog_postgres_parameter_types.py
+    |       test_catalog_reconcile_model_identity.py
+    |       test_catalog_recovery_workflow.py
+    |       test_catalog_scheduler_time.py
+    |       test_catalog_task_recovery.py
+    |       test_core_v2_cutover_contract.py
+    |       test_core_v2_schema.py
+    |       test_decision_engine.py
+    |       test_deploy_password_handling.py
+    |       test_document.py
+    |       test_dynamic_browser_fallback.py
+    |       test_failed_price_retry.py
+    |       test_fetcher.py
+    |       test_fetcher_security_wiring.py
+    |       test_firestore_repository.py
+    |       test_hourly_task_ids.py
+    |       test_installments.py
+    |       test_internal_routes.py
+    |       test_matching.py
+    |       test_matching_query_variants.py
+    |       test_migration_contract.py
+    |       test_normalization.py
+    |       test_offer_price_order.py
+    |       test_operational_issue_workflows.py
+    |       test_postgres_cutover.py
+    |       test_price_control_ledger_status.py
+    |       test_price_dispatch_capacity.py
+    |       test_price_engine_internal_errors.py
+    |       test_price_group_capacity.py
+    |       test_price_queue_inspection_workflow.py
+    |       test_price_refresh_start_job.py
+    |       test_price_run_diagnostics_workflow.py
+    |       test_price_run_finalizer_repository.py
+    |       test_price_run_finalizer_workflow.py
+    |       test_public_price_fallback_contract.py
+    |       test_public_search.py
+    |       test_ranking_contract.py
+    |       test_retry_failed_price_workflow.py
+    |       test_robots_precedence.py
+    |       test_runtime_recovery_contract.py
+    |       test_run_pagination_postgres.py
+    |       test_schedule.py
+    |       test_scraping_diagnostics.py
+    |       test_security_dns_pinning.py
+    |       test_start_catalog_refresh_workflow.py
+    |       test_start_price_refresh_workflow.py
+    |       test_store_quality.py
+    |       test_worker_capacity_contract.py
+    |       __init__.py
+    |       
+    \---web
+        |   bot.html
+        |   
+        \---admin
+                index.html
+                

@@ -1,0 +1,5 @@
+Deploy isolated sa3arly-web preview after WIF bootstrap and successful CI.
+Run with issue reporting enabled: 2026-08-04T14:33Z.
+Run after Cloud Build bucket object and metadata permissions were configured: 2026-08-04T14:41Z.
+Run with explicit staging-bucket read/write/delete diagnostics: 2026-08-04T14:49Z.
+Run with manually staged GCS source archive and Cloud Build --no-source: 2026-08-04T14:57Z.

@@ -1,0 +1,90 @@
+name: Start production catalog refresh
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PROJECT_ID: sa3arly-prod-972741
+  REGION: europe-west1
+  WORKER_SERVICE: sa3arly-worker
+
+jobs:
+  start:
+    name: Start a full catalog refresh now
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    steps:
+      - id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v3
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          version: ">= 540.0.0"
+
+      - id: runtime
+        name: Resolve the private catalog worker
+        run: |
+          set -euo pipefail
+          worker_url="$(gcloud run services describe "$WORKER_SERVICE" \
+            --project="$PROJECT_ID" --region="$REGION" \
+            --format='value(status.url)')"
+          [[ "$worker_url" == https://* ]]
+          echo "worker_url=$worker_url" >> "$GITHUB_OUTPUT"
+
+      - id: invoke_auth
+        name: Mint a one-use worker identity token
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+          token_format: id_token
+          id_token_audience: ${{ steps.runtime.outputs.worker_url }}
+
+      - name: Start and verify the full catalog refresh
+        env:
+          WORKER_URL: ${{ steps.runtime.outputs.worker_url }}
+          ID_TOKEN: ${{ steps.invoke_auth.outputs.id_token }}
+        run: |
+          set -euo pipefail
+          http_code="$(curl --silent --show-error --max-time 900 \
+            --output "$RUNNER_TEMP/catalog-refresh-result.json" \
+            --write-out '%{http_code}' \
+            --header "Authorization: Bearer $ID_TOKEN" \
+            --header 'Content-Type: application/json' \
+            --data '{"trigger":"catalog-full-manual","store_limit":500}' \
+            "$WORKER_URL/internal/scheduler/catalog-discovery")"
+          python3 -m json.tool "$RUNNER_TEMP/catalog-refresh-result.json"
+          [[ "$http_code" == '200' ]]
+          python3 - "$RUNNER_TEMP/catalog-refresh-result.json" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          result = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          if not result.get("run_id"):
+              raise SystemExit("Catalog response did not contain a run_id")
+          if result.get("duplicate") is True:
+              if result.get("status") in {"created", "enqueuing", "queued", "running"}:
+                  print(f"CATALOG_REFRESH_ALREADY_ACTIVE={result.get('run_id')}")
+                  raise SystemExit(0)
+              raise SystemExit("A terminal catalog refresh unexpectedly blocked the new run")
+          if result.get("status") not in {"created", "enqueuing", "queued", "processed_inline"}:
+              raise SystemExit(f"Unexpected catalog status: {result.get('status')}")
+          if int(result.get("task_count") or 0) < 1:
+              raise SystemExit("Catalog refresh did not enqueue any store tasks")
+          print(f"CATALOG_REFRESH_RUN_ID={result['run_id']}")
+          print(f"CATALOG_REFRESH_STATUS={result.get('status')}")
+          print(f"CATALOG_REFRESH_SOURCES={result.get('source_count')}")
+          print(f"CATALOG_REFRESH_QUEUED_TASKS={result.get('task_count')}")
+          PY

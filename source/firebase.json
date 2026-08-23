@@ -1,0 +1,36 @@
+{
+  "hosting": {
+    "public": "web",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "/api/**",
+        "run": {
+          "serviceId": "sa3arly-api",
+          "region": "europe-west1",
+          "pinTag": true
+        }
+      },
+      {
+        "source": "**",
+        "destination": "/admin/index.html"
+      }
+    ],
+    "headers": [
+      {
+        "source": "/api/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public,max-age=60,s-maxage=300"
+          }
+        ]
+      }
+    ],
+    "cleanUrls": true
+  }
+}

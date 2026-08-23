@@ -1,0 +1,17 @@
+[
+  {
+    "backupKind": "SNAPSHOT",
+    "databaseVersion": "POSTGRES_16",
+    "endTime": "2026-08-12T22:42:30.212Z",
+    "enqueuedTime": "2026-08-12T22:40:58.917Z",
+    "id": "1786574458917",
+    "instance": "sa3arly-postgres",
+    "kind": "sql#backupRun",
+    "location": "eu",
+    "selfLink": "https://sqladmin.googleapis.com/sql/v1beta4/projects/sa3arly-prod-972741/instances/sa3arly-postgres/backupRuns/1786574458917",
+    "startTime": "2026-08-12T22:40:58.925Z",
+    "status": "SUCCESSFUL",
+    "type": "ON_DEMAND",
+    "windowStartTime": "2026-08-12T22:40:58.917Z"
+  }
+]

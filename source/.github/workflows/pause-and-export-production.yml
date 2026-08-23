@@ -1,0 +1,245 @@
+name: Pause and export production
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: sa3arly-production-handoff
+  cancel-in-progress: false
+
+env:
+  PROJECT_ID: sa3arly-prod-972741
+  REGION: europe-west1
+  DB_INSTANCE: sa3arly-postgres
+  DB_SECRET: sa3arly-database-url
+  PRICE_QUEUE: sa3arly-scrape
+  CATALOG_QUEUE: sa3arly-catalog-discovery
+  PRICE_SCHEDULER: sa3arly-hourly-refresh
+  CATALOG_SCHEDULER: sa3arly-catalog-discovery
+  FINALIZER_SCHEDULER: sa3arly-price-run-finalizer
+
+jobs:
+  pause-and-export:
+    name: Pause collectors and create an encrypted database handoff
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v3
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          version: ">= 540.0.0"
+
+      - name: Pause production collection without deleting queued work
+        shell: bash
+        run: |
+          set -euo pipefail
+          for scheduler in \
+            "$PRICE_SCHEDULER" \
+            "$CATALOG_SCHEDULER" \
+            "$FINALIZER_SCHEDULER"; do
+            if gcloud scheduler jobs describe "$scheduler" \
+              --project="$PROJECT_ID" --location="$REGION" >/dev/null 2>&1; then
+              gcloud scheduler jobs pause "$scheduler" \
+                --project="$PROJECT_ID" --location="$REGION" --quiet
+            fi
+          done
+          for queue in "$PRICE_QUEUE" "$CATALOG_QUEUE"; do
+            if gcloud tasks queues describe "$queue" \
+              --project="$PROJECT_ID" --location="$REGION" >/dev/null 2>&1; then
+              gcloud tasks queues pause "$queue" \
+                --project="$PROJECT_ID" --location="$REGION" --quiet
+            fi
+          done
+
+      - name: Verify the paused runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          report="$RUNNER_TEMP/sa3arly-runtime-stop-report.json"
+          python3 - "$report" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          Path(sys.argv[1]).write_text(
+              json.dumps({"schedulers": {}, "queues": {}}, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          PY
+          for scheduler in \
+            "$PRICE_SCHEDULER" \
+            "$CATALOG_SCHEDULER" \
+            "$FINALIZER_SCHEDULER"; do
+            state="$(gcloud scheduler jobs describe "$scheduler" \
+              --project="$PROJECT_ID" --location="$REGION" \
+              --format='value(state)' 2>/dev/null || true)"
+            if [[ -n "$state" ]]; then
+              [[ "$state" == "PAUSED" ]]
+              jq --arg name "$scheduler" --arg state "$state" \
+                '.schedulers[$name] = $state' "$report" > "$report.next"
+              mv "$report.next" "$report"
+            fi
+          done
+          for queue in "$PRICE_QUEUE" "$CATALOG_QUEUE"; do
+            state="$(gcloud tasks queues describe "$queue" \
+              --project="$PROJECT_ID" --location="$REGION" \
+              --format='value(state)' 2>/dev/null || true)"
+            if [[ -n "$state" ]]; then
+              [[ "$state" == "PAUSED" ]]
+              jq --arg name "$queue" --arg state "$state" \
+                '.queues[$name] = $state' "$report" > "$report.next"
+              mv "$report.next" "$report"
+            fi
+          done
+          cat "$report"
+          cp "$report" "$GITHUB_WORKSPACE/sa3arly-runtime-stop-report.json"
+
+      - name: Create a recoverable Cloud SQL backup
+        shell: bash
+        run: |
+          set -euo pipefail
+          gcloud sql backups create \
+            --instance="$DB_INSTANCE" --project="$PROJECT_ID" --quiet
+          gcloud sql backups list \
+            --instance="$DB_INSTANCE" --project="$PROJECT_ID" \
+            --sort-by='~startTime' --limit=1 --format=json \
+            > "$GITHUB_WORKSPACE/sa3arly-cloud-sql-backup.json"
+
+      - id: deploy_exporter
+        name: Deploy a private read-only logical exporter
+        env:
+          BOOTSTRAP_SERVICE_ACCOUNT: sa3arly-bootstrap@sa3arly-prod-972741.iam.gserviceaccount.com
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          service_name="sa3arly-database-export-${GITHUB_RUN_ID}"
+          export_token="$(openssl rand -hex 32)"
+          echo "::add-mask::$export_token"
+          echo "service_name=$service_name" >> "$GITHUB_OUTPUT"
+          echo "export_token=$export_token" >> "$GITHUB_OUTPUT"
+          instance_connection="${PROJECT_ID}:${REGION}:${DB_INSTANCE}"
+          api_image="$(gcloud run services describe sa3arly-api \
+            --project="$PROJECT_ID" --region="$REGION" \
+            --format='value(spec.template.spec.containers[0].image)')"
+          [[ -n "$api_image" ]]
+          exporter_code="$(base64 -w0 scripts/export_database_http.py)"
+          launcher="exec(__import__('base64').b64decode('${exporter_code}'))"
+
+          gcloud run deploy "$service_name" --project="$PROJECT_ID" \
+            --region="$REGION" --image="$api_image" \
+            --service-account="$BOOTSTRAP_SERVICE_ACCOUNT" \
+            --set-cloudsql-instances="$instance_connection" \
+            --set-secrets="DATABASE_URL=${DB_SECRET}:latest" \
+            --set-env-vars="EXPORT_TOKEN=${export_token}" \
+            --command=python --args="-c,${launcher}" \
+            --cpu=1 --memory=2Gi --min=1 --max=1 --concurrency=1 \
+            --timeout=3600 --ingress=all \
+            --no-allow-unauthenticated --quiet
+
+          service_url="$(gcloud run services describe "$service_name" \
+            --project="$PROJECT_ID" --region="$REGION" \
+            --format='value(status.url)')"
+          [[ -n "$service_url" ]]
+          echo "service_url=$service_url" >> "$GITHUB_OUTPUT"
+
+      - id: invoke_auth
+        name: Mint a one-use exporter identity token
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+          token_format: id_token
+          id_token_audience: ${{ steps.deploy_exporter.outputs.service_url }}
+
+      - id: database
+        name: Download, verify, and encrypt the complete logical database export
+        env:
+          EXPORT_PASSWORD: ${{ secrets.SA3ARLY_EXPORT_PASSWORD }}
+          EXPORTER_URL: ${{ steps.deploy_exporter.outputs.service_url }}
+          EXPORTER_TOKEN: ${{ steps.deploy_exporter.outputs.export_token }}
+          ID_TOKEN: ${{ steps.invoke_auth.outputs.id_token }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          [[ -n "$EXPORT_PASSWORD" ]]
+          export_dir="$RUNNER_TEMP/sa3arly-production-export"
+          mkdir -p "$export_dir/database"
+          cp sa3arly-runtime-stop-report.json "$export_dir/"
+          cp sa3arly-cloud-sql-backup.json "$export_dir/"
+          git rev-parse HEAD > "$export_dir/source-commit.txt"
+
+          headers=(
+            --header "Authorization: Bearer ${ID_TOKEN}"
+            --header "X-Export-Token: ${EXPORTER_TOKEN}"
+          )
+          curl --fail --location --silent --show-error \
+            "${headers[@]}" "${EXPORTER_URL}/manifest" \
+            --output "$export_dir/database/manifest.json"
+          expected_size="$(jq -er '.size_bytes' "$export_dir/database/manifest.json")"
+          expected_sha="$(jq -er '.sha256' "$export_dir/database/manifest.json")"
+          [[ "$expected_size" =~ ^[1-9][0-9]*$ ]]
+          [[ "$expected_sha" =~ ^[0-9a-f]{64}$ ]]
+
+          database_archive="$export_dir/database/sa3arly-production-data.zip"
+          : > "$database_archive"
+          chunk_size=$((8 * 1024 * 1024))
+          offset=0
+          while (( offset < expected_size )); do
+            current_size=$((expected_size - offset))
+            (( current_size > chunk_size )) && current_size=$chunk_size
+            curl --fail --location --silent --show-error \
+              "${headers[@]}" \
+              "${EXPORTER_URL}/chunk?offset=${offset}&length=${current_size}" \
+              --output "$RUNNER_TEMP/database-export.chunk"
+            [[ "$(stat -c '%s' "$RUNNER_TEMP/database-export.chunk")" -eq "$current_size" ]]
+            cat "$RUNNER_TEMP/database-export.chunk" >> "$database_archive"
+            offset=$((offset + current_size))
+          done
+          [[ "$(stat -c '%s' "$database_archive")" -eq "$expected_size" ]]
+          echo "${expected_sha}  ${database_archive}" | sha256sum --check --strict
+          unzip -t "$database_archive"
+
+          tar -C "$RUNNER_TEMP" -czf "$RUNNER_TEMP/sa3arly-production-export.tar.gz" \
+            sa3arly-production-export
+          openssl enc -aes-256-cbc -pbkdf2 -salt \
+            -in "$RUNNER_TEMP/sa3arly-production-export.tar.gz" \
+            -out "$GITHUB_WORKSPACE/sa3arly-production-export.tar.gz.enc" \
+            -pass env:EXPORT_PASSWORD
+          sha256sum "$GITHUB_WORKSPACE/sa3arly-production-export.tar.gz.enc" \
+            > "$GITHUB_WORKSPACE/sa3arly-production-export.tar.gz.enc.sha256"
+          echo "DATABASE_EXPORT=ENCRYPTED"
+
+      - name: Delete the private exporter
+        if: ${{ always() && steps.deploy_exporter.outputs.service_name != '' }}
+        shell: bash
+        env:
+          EXPORTER_SERVICE: ${{ steps.deploy_exporter.outputs.service_name }}
+        run: |
+          gcloud run services delete "$EXPORTER_SERVICE" \
+            --project="$PROJECT_ID" --region="$REGION" --quiet
+
+      - name: Upload the encrypted handoff for immediate retrieval
+        if: ${{ steps.database.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: sa3arly-production-export-${{ github.run_id }}
+          path: |
+            sa3arly-production-export.tar.gz.enc
+            sa3arly-production-export.tar.gz.enc.sha256
+          if-no-files-found: error
+          retention-days: 1

@@ -1,0 +1,74 @@
+services:
+  postgres:
+    image: postgres:16-bookworm
+    environment:
+      POSTGRES_DB: sa3arly
+      POSTGRES_USER: sa3arly
+      POSTGRES_PASSWORD: sa3arly
+    ports:
+      - "5432:5432"
+    volumes:
+      - sa3arly_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sa3arly -d sa3arly"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  bootstrap:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    environment:
+      DATABASE_URL: postgresql://sa3arly:sa3arly@postgres:5432/sa3arly
+    command: ["python", "scripts/bootstrap_db.py"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    env_file: .env
+    environment:
+      SERVICE_MODE: api
+      DATABASE_URL: postgresql://sa3arly:sa3arly@postgres:5432/sa3arly
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    env_file: .env
+    environment:
+      SERVICE_MODE: worker
+      TASKS_MODE: inline
+      WORKER_URL: http://worker:8080
+      DATABASE_URL: postgresql://sa3arly:sa3arly@postgres:5432/sa3arly
+    ports:
+      - "8081:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    profiles: ["scheduler"]
+    env_file: .env
+    environment:
+      WORKER_URL: http://worker:8080
+      INTERNAL_TOKEN: change-this-local-token
+      SCHEDULER_TIMEZONE: Africa/Cairo
+    command: ["python", "scripts/local_scheduler.py"]
+    depends_on:
+      - worker
+
+volumes:
+  sa3arly_postgres:

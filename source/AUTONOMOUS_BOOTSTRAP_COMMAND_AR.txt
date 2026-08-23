@@ -1,0 +1,13 @@
+من Google Cloud Shell، بعد فك الحزمة والدخول إلى مجلد المشروع:
+
+1) سجل GitHub CLI إن لم يكن مسجلًا:
+   gh auth login
+
+2) شغّل التهيئة الكاملة:
+   SA3ARLY_ADMIN_EMAILS="ضع بريد الإدارة هنا" bash scripts/bootstrap_autonomous_delivery.sh
+
+3) بعد نجاح السكربت:
+   GitHub > Settings > Applications > Installed GitHub Apps > ChatGPT > Configure
+   ثم أضف مستودع sa3arly إلى المستودعات المسموح بها.
+
+لا ترسل مفاتيح أو Tokens في المحادثة.

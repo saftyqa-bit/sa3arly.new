@@ -1,0 +1,208 @@
+name: Observe production data refresh
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/observe-production-data.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: sa3arly-production-data-observer
+  cancel-in-progress: true
+
+jobs:
+  observe:
+    name: Track catalog and price refreshes
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - name: Open operational status issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          title="Production data refresh observer: run $GITHUB_RUN_ID"
+          body="Starting production catalog and price refresh observation for commit $GITHUB_SHA. Run: https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          issue_number="$(
+            gh issue list --repo "$GITHUB_REPOSITORY" --state all \
+              --search "$GITHUB_RUN_ID in:title" --limit 100 \
+              --json number,title \
+              | jq -r --arg title "$title" \
+                'map(select(.title == $title)) | first | .number // empty'
+          )"
+          if [[ -n "$issue_number" ]]; then
+            gh issue reopen "$issue_number" --repo "$GITHUB_REPOSITORY" || true
+            gh issue edit "$issue_number" --repo "$GITHUB_REPOSITORY" --body "$body"
+          else
+            issue_url="$(gh issue create \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$title" \
+              --body "$body")"
+            issue_number="${issue_url##*/}"
+          fi
+          echo "ISSUE_NUMBER=$issue_number" >> "$GITHUB_ENV"
+
+      - name: Observe public production status until both runs finish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          previous=""
+
+          fetch_json() {
+            local destination="$1"
+            shift
+            local url code error_file
+            FETCH_DIAGNOSTIC=""
+            error_file="$RUNNER_TEMP/production-observer-curl-error.txt"
+
+            for url in "$@"; do
+              : > "$error_file"
+              if code="$(curl --location --silent --show-error \
+                --max-time 30 --output "$destination" \
+                --write-out '%{http_code}' "$url" 2>"$error_file")"; then
+                if [[ "$code" =~ ^2[0-9][0-9]$ ]] \
+                  && jq -e . "$destination" >/dev/null 2>&1; then
+                  return 0
+                fi
+              else
+                code="curl_error"
+              fi
+              FETCH_DIAGNOSTIC+="${url} => ${code}; "
+            done
+            return 1
+          }
+
+          for attempt in $(seq 1 70); do
+            observed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            status_file="$RUNNER_TEMP/production-live-status.json"
+            stores_file="$RUNNER_TEMP/production-live-stores.json"
+
+            if ! fetch_json "$status_file" \
+              https://www.sa3arly.com/api/live/status \
+              https://sa3arly.com/api/live/status; then
+              body="$RUNNER_TEMP/production-data-status.md"
+              {
+                echo "Production data observer is retrying the public status endpoint."
+                echo
+                echo "Commit: $GITHUB_SHA"
+                echo "Observer run: https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+                echo "Attempt: $attempt of 70"
+                echo "Observed at: $observed_at"
+                echo "HTTP diagnostics: $FETCH_DIAGNOSTIC"
+              } > "$body"
+              gh issue edit "$ISSUE_NUMBER" \
+                --repo "$GITHUB_REPOSITORY" \
+                --body-file "$body"
+              sleep 60
+              continue
+            fi
+            if fetch_json "$stores_file" \
+              https://www.sa3arly.com/api/live/stores \
+              https://sa3arly.com/api/live/stores; then
+              :
+            else
+              echo '{}' > "$stores_file"
+            fi
+
+            snapshot="$(jq -S -n \
+              --arg observed_at "$observed_at" \
+              --slurpfile status "$status_file" \
+              --slurpfile stores "$stores_file" \
+              '($status[0] // {}) as $status |
+              ($stores[0] // {}) as $stores |
+              {
+                observed_at: $observed_at,
+                catalog: {
+                  id: $status.latest_catalog_run_id,
+                  state: $status.latest_catalog_run_status,
+                  processed: $status.latest_catalog_run_completed_tasks,
+                  total: $status.latest_catalog_run_queued_tasks,
+                  succeeded: $status.latest_catalog_run_successful_tasks,
+                  failed: $status.latest_catalog_run_failed_tasks,
+                  error_codes: $status.latest_catalog_run_error_codes,
+                  candidates: $status.latest_catalog_run_candidates_seen,
+                  mappings_created: $status.latest_catalog_run_mappings_created,
+                  task_states: $status.latest_catalog_run_task_states,
+                  recent_runs: ($status.recent_catalog_runs // []),
+                  typeerror_samples: ([
+                    $status
+                    | ..
+                    | objects
+                    | select(.error_code? == "internal_typeerror")
+                    | {
+                        task_id: (.task_id // .external_task_id // null),
+                        store_id: (.store_id // null),
+                        error_code: .error_code,
+                        error_message: (.error_message // null)
+                      }
+                  ] | .[:8])
+                },
+                price: {
+                  id: $status.latest_price_run_id,
+                  state: $status.latest_price_run_status,
+                  processed: $status.latest_price_run_completed_tasks,
+                  total: $status.latest_price_run_queued_tasks,
+                  succeeded: $status.latest_price_run_successful_tasks,
+                  failed: $status.latest_price_run_failed_tasks,
+                  error_codes: $status.latest_price_run_error_codes,
+                  internal_error_signatures: $status.latest_price_run_internal_error_signatures,
+                  task_states: $status.latest_price_run_task_states
+                },
+                status_keys: ($status | keys),
+                public_counts: {
+                  active_stores: ($status.active_stores // $stores.total // ($stores.stores | length?) // null),
+                  connected_stores: ($status.connected_stores // $stores.connected_stores // null),
+                  priced_stores: ($status.visible_priced_stores // $stores.priced_stores // null),
+                  verified_offers: ($status.visible_cash_offers // $stores.verified_offer_count // null)
+                }
+              }')"
+
+            comparable="$(jq 'del(.observed_at)' <<<"$snapshot")"
+            if [[ "$comparable" != "$previous" ]]; then
+              body="$RUNNER_TEMP/production-data-status.md"
+              {
+                echo "Production catalog and price refresh status."
+                echo
+                echo "Commit: $GITHUB_SHA"
+                echo "Observer run: https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+                echo
+                echo "### Latest snapshot"
+                echo
+                echo "~~~json"
+                echo "$snapshot"
+                echo "~~~"
+              } > "$body"
+              gh issue edit "$ISSUE_NUMBER" \
+                --repo "$GITHUB_REPOSITORY" \
+                --body-file "$body"
+              previous="$comparable"
+            fi
+
+            catalog_state="$(jq -r '.catalog.state // ""' <<<"$snapshot")"
+            price_state="$(jq -r '.price.state // ""' <<<"$snapshot")"
+            catalog_total="$(jq -r '.catalog.total // 0' <<<"$snapshot")"
+            price_total="$(jq -r '.price.total // 0' <<<"$snapshot")"
+
+            if [[ "$catalog_total" -gt 0 && "$price_total" -gt 0 \
+              && "$catalog_state" =~ ^(completed|failed|cancelled)$ \
+              && "$price_state" =~ ^(completed|failed|cancelled)$ ]]; then
+              gh issue close "$ISSUE_NUMBER" \
+                --repo "$GITHUB_REPOSITORY" \
+                --comment "Both observed runs reached terminal states."
+              exit 0
+            fi
+
+            sleep 300
+          done
+
+          gh issue comment "$ISSUE_NUMBER" \
+            --repo "$GITHUB_REPOSITORY" \
+            --body "Observer reached its time limit before both refreshes became terminal."

@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="1080" y1="40" x2="90" y2="610" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#06162B"/>
+      <stop offset="0.62" stop-color="#092747"/>
+      <stop offset="1" stop-color="#06444A"/>
+    </linearGradient>
+    <linearGradient id="mark" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#4B8BFF"/>
+      <stop offset="1" stop-color="#1555D9"/>
+    </linearGradient>
+    <linearGradient id="offer" x1="0" y1="0" x2="1" y2="0">
+      <stop stop-color="#F0FCF8"/>
+      <stop offset="1" stop-color="#FFFFFF"/>
+    </linearGradient>
+    <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1" fill="#fff" opacity="0.13"/>
+    </pattern>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="180%">
+      <feDropShadow dx="0" dy="24" stdDeviation="24" flood-color="#001026" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect width="1200" height="630" fill="url(#dots)"/>
+  <circle cx="1080" cy="40" r="245" fill="none" stroke="#fff" stroke-opacity="0.055" stroke-width="44"/>
+  <circle cx="1080" cy="40" r="160" fill="none" stroke="#4B8BFF" stroke-opacity="0.09" stroke-width="2"/>
+
+  <g transform="translate(1024 52)">
+    <rect width="76" height="76" rx="22" fill="url(#mark)"/>
+    <path d="M17 25h43M23 25l5 27c.7 4 4 7 8 7h14" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="35" cy="65" r="3.7" fill="#fff"/>
+    <circle cx="52" cy="65" r="3.7" fill="#fff"/>
+    <path d="m34 38 6 6 12-13" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <text x="1000" y="101" text-anchor="start" fill="#fff" font-family="IBM Plex Sans Arabic, Noto Sans Arabic, Arial, sans-serif" font-size="43" font-weight="800" direction="rtl">سعرلي</text>
+  <text x="1098" y="157" text-anchor="start" fill="#90B8F9" font-family="IBM Plex Sans Arabic, Noto Sans Arabic, Arial, sans-serif" font-size="20" font-weight="700" direction="rtl">مقارنة أسعار تفهم ما تبحث عنه</text>
+
+  <text x="1100" y="250" text-anchor="start" fill="#fff" font-family="IBM Plex Sans Arabic, Noto Sans Arabic, Arial, sans-serif" font-size="68" font-weight="800" direction="rtl">منتج واحد.</text>
+  <text x="1100" y="330" text-anchor="start" fill="#72A8FF" font-family="IBM Plex Sans Arabic, Noto Sans Arabic, Arial, sans-serif" font-size="72" font-weight="800" direction="rtl">كل الأسعار أمامك.</text>
+  <text x="1100" y="384" text-anchor="start" fill="#C5D5E8" font-family="IBM Plex Sans Arabic, Noto Sans Arabic, Arial, sans-serif" font-size="23" direction="rtl">السعر، الشحن، التوفر وآخر تحديث — في جدول واحد</text>
+
+  <g transform="translate(72 98)" filter="url(#shadow)">
+    <rect width="420" height="432" rx="30" fill="#fff"/>
+    <rect x="24" y="26" width="58" height="64" rx="17" fill="#EAF2FF"/>
+    <rect x="43" y="38" width="20" height="38" rx="5" fill="none" stroke="#2367F2" stroke-width="3"/>
+    <circle cx="53" cy="69" r="1.8" fill="#2367F2"/>
+    <text x="390" y="48" text-anchor="end" fill="#78869A" font-family="Arial, sans-serif" font-size="15">EXAMPLE</text>
+    <text x="390" y="76" text-anchor="end" fill="#091A31" font-family="Arial, sans-serif" font-size="22" font-weight="700">Smartphone · 256 GB</text>
+
+    <g transform="translate(24 112)">
+      <rect width="372" height="94" rx="19" fill="url(#offer)" stroke="#8ADBC5" stroke-width="2"/>
+      <rect x="316" y="27" width="40" height="40" rx="12" fill="#19BC97"/>
+      <text x="336" y="54" text-anchor="middle" fill="#fff" font-family="Arial, sans-serif" font-size="18" font-weight="700">1</text>
+      <text x="298" y="42" text-anchor="end" fill="#091A31" font-family="Arial, sans-serif" font-size="18" font-weight="700">First store</text>
+      <text x="298" y="67" text-anchor="end" fill="#73839A" font-family="Arial, sans-serif" font-size="13">Free shipping</text>
+      <text x="26" y="57" fill="#0E9F7D" font-family="Arial, sans-serif" font-size="27" font-weight="800">32,490</text>
+    </g>
+
+    <g transform="translate(24 220)">
+      <rect width="372" height="94" rx="19" fill="#fff" stroke="#E1E8F1" stroke-width="2"/>
+      <rect x="316" y="27" width="40" height="40" rx="12" fill="#EDF1F6"/>
+      <text x="336" y="54" text-anchor="middle" fill="#718096" font-family="Arial, sans-serif" font-size="18" font-weight="700">2</text>
+      <text x="298" y="42" text-anchor="end" fill="#091A31" font-family="Arial, sans-serif" font-size="18" font-weight="700">Second store</text>
+      <text x="298" y="67" text-anchor="end" fill="#73839A" font-family="Arial, sans-serif" font-size="13">Shipping EGP 50</text>
+      <text x="26" y="57" fill="#091A31" font-family="Arial, sans-serif" font-size="27" font-weight="800">32,850</text>
+    </g>
+
+    <line x1="24" y1="339" x2="396" y2="339" stroke="#E6ECF3"/>
+    <circle cx="55" cy="379" r="20" fill="#EAF2FF"/>
+    <path d="M55 368v12l8 5M55 360a20 20 0 1 0 17 9" fill="none" stroke="#2367F2" stroke-width="3" stroke-linecap="round"/>
+    <text x="390" y="373" text-anchor="end" fill="#091A31" font-family="Arial, sans-serif" font-size="16" font-weight="700">Fresh prices</text>
+    <text x="390" y="397" text-anchor="end" fill="#73839A" font-family="Arial, sans-serif" font-size="13">Sorted automatically</text>
+  </g>
+
+  <g transform="translate(735 457)">
+    <rect width="365" height="60" rx="18" fill="#2367F2"/>
+    <text x="183" y="39" text-anchor="middle" fill="#fff" font-family="IBM Plex Sans Arabic, Noto Sans Arabic, Arial, sans-serif" font-size="21" font-weight="800" direction="rtl">قارن سعر منتج الآن</text>
+  </g>
+  <text x="1100" y="580" text-anchor="end" fill="#8FA6BF" font-family="Arial, sans-serif" font-size="20">sa3arly.com</text>
+</svg>

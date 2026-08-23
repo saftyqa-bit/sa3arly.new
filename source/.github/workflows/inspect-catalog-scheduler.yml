@@ -1,0 +1,174 @@
+name: Inspect catalog scheduler runtime
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/inspect-catalog-scheduler.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  issues: write
+
+jobs:
+  inspect:
+    name: Read scheduler and queue state
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    steps:
+      - name: Open runtime inspection issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          title="Catalog scheduler inspection: run $GITHUB_RUN_ID"
+          body="Starting read-only catalog scheduler inspection. Run: https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          issue_number="$(
+            gh issue list --repo "$GITHUB_REPOSITORY" --state all \
+              --search "$GITHUB_RUN_ID in:title" --limit 100 \
+              --json number,title \
+              | jq -r --arg title "$title" \
+                'map(select(.title == $title)) | first | .number // empty'
+          )"
+          if [[ -n "$issue_number" ]]; then
+            gh issue reopen "$issue_number" --repo "$GITHUB_REPOSITORY" || true
+            gh issue edit "$issue_number" --repo "$GITHUB_REPOSITORY" --body "$body"
+          else
+            issue_url="$(gh issue create \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$title" \
+              --body "$body")"
+            issue_number="${issue_url##*/}"
+          fi
+          echo "INSPECTION_ISSUE=$issue_number" >> "$GITHUB_ENV"
+
+      - id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: sa3arly-prod-972741
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v3
+        with:
+          project_id: sa3arly-prod-972741
+          version: ">= 540.0.0"
+
+      - name: Publish bounded scheduler and queue state
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          scheduler="$RUNNER_TEMP/catalog-scheduler.json"
+          queue="$RUNNER_TEMP/catalog-queue.json"
+          tasks="$RUNNER_TEMP/catalog-tasks.json"
+          report="$RUNNER_TEMP/catalog-runtime-inspection.md"
+
+          gcloud scheduler jobs describe sa3arly-catalog-discovery \
+            --project=sa3arly-prod-972741 \
+            --location=europe-west1 \
+            --format=json > "$scheduler"
+
+          gcloud tasks queues describe sa3arly-catalog-discovery \
+            --project=sa3arly-prod-972741 \
+            --location=europe-west1 \
+            --format=json > "$queue"
+
+          if ! gcloud tasks list \
+            --queue=sa3arly-catalog-discovery \
+            --project=sa3arly-prod-972741 \
+            --location=europe-west1 \
+            --limit=25 \
+            --format=json > "$tasks"; then
+            echo '[]' > "$tasks"
+          fi
+
+          python3 - "$scheduler" "$queue" "$tasks" "$report" <<'PY'
+          import base64
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          scheduler = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          queue = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+          tasks = json.loads(Path(sys.argv[3]).read_text(encoding="utf-8") or "[]")
+
+          def task_summary(task):
+              first = task.get("firstAttempt") or {}
+              last = task.get("lastAttempt") or {}
+              return {
+                  "name": str(task.get("name") or "").rsplit("/", 1)[-1],
+                  "scheduleTime": task.get("scheduleTime"),
+                  "dispatchCount": task.get("dispatchCount"),
+                  "responseCount": task.get("responseCount"),
+                  "firstDispatchTime": first.get("dispatchTime"),
+                  "firstResponseCode": (first.get("responseStatus") or {}).get("code"),
+                  "lastDispatchTime": last.get("dispatchTime"),
+                  "lastResponseCode": (last.get("responseStatus") or {}).get("code"),
+              }
+
+          target = scheduler.get("httpTarget") or {}
+          encoded_body = target.get("body")
+          decoded_body = None
+          if encoded_body:
+              try:
+                  decoded_body = json.loads(
+                      base64.b64decode(encoded_body).decode("utf-8")
+                  )
+              except (ValueError, UnicodeDecodeError):
+                  decoded_body = "unparseable"
+
+          snapshot = {
+              "scheduler": {
+                  "state": scheduler.get("state"),
+                  "schedule": scheduler.get("schedule"),
+                  "timeZone": scheduler.get("timeZone"),
+                  "lastAttemptTime": scheduler.get("lastAttemptTime"),
+                  "status": scheduler.get("status"),
+                  "userUpdateTime": scheduler.get("userUpdateTime"),
+                  "targetUri": target.get("uri"),
+                  "requestBody": decoded_body,
+              },
+              "queue": {
+                  "state": queue.get("state"),
+                  "rateLimits": queue.get("rateLimits"),
+                  "retryConfig": queue.get("retryConfig"),
+              },
+              "listedTaskCount": len(tasks),
+              "tasks": [task_summary(task) for task in tasks[:10]],
+          }
+
+          report = Path(sys.argv[4])
+          with report.open("w", encoding="utf-8") as handle:
+              handle.write("Read-only catalog scheduler and Cloud Tasks inspection.\n\n")
+              handle.write(f"Commit: {os.environ.get('GITHUB_SHA', '')}\n")
+              handle.write(
+                  "Run: https://github.com/"
+                  f"{os.environ.get('GITHUB_REPOSITORY', '')}"
+                  "/actions/runs/"
+                  f"{os.environ.get('GITHUB_RUN_ID', '')}\n\n"
+              )
+              handle.write("~~~json\n")
+              json.dump(snapshot, handle, ensure_ascii=False, indent=2)
+              handle.write("\n~~~\n")
+          PY
+
+          gh issue edit "$INSPECTION_ISSUE" \
+            --repo "$GITHUB_REPOSITORY" \
+            --body-file "$report"
+
+      - name: Record runtime inspection failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh issue edit "$INSPECTION_ISSUE" \
+            --repo "$GITHUB_REPOSITORY" \
+            --body "Catalog scheduler inspection failed. Run: https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"

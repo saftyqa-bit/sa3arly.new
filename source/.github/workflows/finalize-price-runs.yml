@@ -1,0 +1,71 @@
+name: Finalize overdue price runs
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: sa3arly-price-run-finalizer
+  cancel-in-progress: false
+
+env:
+  PROJECT_ID: sa3arly-prod-972741
+  REGION: europe-west1
+  API_SERVICE: sa3arly-api
+  PRICE_FINALIZER_JOB: sa3arly-price-run-finalizer
+
+jobs:
+  finalize:
+    name: Finalize price runs beyond half of their refresh interval
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    steps:
+      - id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v3
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          version: ">= 540.0.0"
+
+      - id: runtime
+        name: Resolve production services
+        run: |
+          set -euo pipefail
+          api_url="$(gcloud run services describe "$API_SERVICE" \
+            --project="$PROJECT_ID" --region="$REGION" \
+            --format='value(status.url)')"
+          [[ "$api_url" == https://* ]]
+          echo "api_url=$api_url" >> "$GITHUB_OUTPUT"
+
+      - id: finalize
+        name: Finalize overdue runs outside the worker service
+        run: |
+          set -euo pipefail
+          gcloud run jobs execute "$PRICE_FINALIZER_JOB" \
+            --project="$PROJECT_ID" --region="$REGION" --wait
+
+      - name: Verify public run state
+        env:
+          API_URL: ${{ steps.runtime.outputs.api_url }}
+        run: |
+          set -euo pipefail
+          status_json="$(curl --fail --silent --show-error --retry 5 \
+            --retry-delay 2 --max-time 30 "$API_URL/api/v1/status")"
+          echo "$status_json" | jq '{
+            latest_price_run_id,
+            latest_price_run_status,
+            latest_price_run_queued_tasks,
+            latest_price_run_completed_tasks,
+            latest_price_run_task_states
+          }'

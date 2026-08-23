@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>سعرها — لوحة تشغيل الأسعار</title>
+  <style>
+    :root{font-family:Inter,Tajawal,Arial,sans-serif;color:#0f2345;background:#f3f7fc}
+    *{box-sizing:border-box} body{margin:0}
+    .wrap{max-width:1240px;margin:auto;padding:24px}
+    .hero,.card{background:#fff;border:1px solid #dbe6f4;border-radius:18px;box-shadow:0 10px 30px #234a7b12}
+    .hero{padding:24px;margin-bottom:18px}.hero h1{margin:0 0 8px;font-size:28px}.muted{color:#6b7b96}
+    .stats{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin:18px 0}
+    .stat{padding:16px;background:#eef5ff;border-radius:14px}.stat b{display:block;font-size:23px;margin-top:6px}
+    .search{display:flex;gap:10px}.search input{flex:1;padding:14px;border:1px solid #cbd8ea;border-radius:12px;font-size:16px}
+    button{border:0;background:#1769ff;color:white;border-radius:12px;padding:12px 18px;font-weight:700;cursor:pointer}
+    .results{display:grid;grid-template-columns:330px 1fr;gap:16px}
+    .card{padding:16px}.items{max-height:620px;overflow:auto}
+    .item{padding:12px;border-bottom:1px solid #edf1f7;cursor:pointer}.item:hover{background:#f5f9ff}
+    .item small{display:block;color:#71809a;margin-top:5px}
+    .tabs{display:flex;gap:8px;margin:14px 0}.tabs button{background:#e9f1ff;color:#2055a5}.tabs button.active{background:#1769ff;color:#fff}
+    table{width:100%;border-collapse:collapse;font-size:14px}th,td{padding:12px;border-bottom:1px solid #e7edf6;text-align:right}th{background:#f4f8fd}
+    .pill{display:inline-block;padding:4px 9px;border-radius:999px;background:#e8f8f0;color:#087a48;font-weight:700;font-size:12px}
+    .warn{background:#fff5d8;color:#8b5b00}.empty{padding:40px;text-align:center;color:#71809a}
+    @media(max-width:900px){.stats{grid-template-columns:repeat(2,1fr)}.results{grid-template-columns:1fr}.search{flex-direction:column}}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <section class="hero">
+    <h1>محرك سعرلي — تحديث كل ساعة</h1>
+    <div class="muted">قاعدة الكاش والتقسيط التشغيلية. الأسعار لا تُعرض إلا بعد رصد ناجح ومطابقة المنتج.</div>
+    <div class="stats" id="stats"></div>
+    <div class="search">
+      <input id="q" placeholder="ابحث بالموديل أو الماركة… مثال iPhone أو Samsung A55">
+      <button onclick="searchProducts()">بحث</button>
+    </div>
+  </section>
+
+  <div class="results">
+    <aside class="card">
+      <h3>المنتجات</h3>
+      <div class="items" id="items"><div class="empty">اكتب اسم منتج للبحث</div></div>
+    </aside>
+    <main class="card">
+      <div id="product"><div class="empty">اختر نسخة منتج لعرض عروض الكاش والتقسيط</div></div>
+    </main>
+  </div>
+</div>
+<script>
+const api = location.origin;
+const fmt = n => n == null ? "—" : new Intl.NumberFormat("ar-EG").format(Number(n)) + " ج.م";
+const esc = s => String(s ?? "").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[m]));
+
+async function loadStats(){
+  try{
+    const s=await fetch(api+"/api/v1/status").then(r=>r.json());
+    const data=[
+      ["المنتجات",s.products],["المتاجر النشطة",s.active_stores],["روابط الرصد",s.active_mappings],
+      ["عروض كاش مسعرة",s.priced_cash_offers],["خطط تقسيط",s.active_installment_plans]
+    ];
+    document.querySelector("#stats").innerHTML=data.map(x=>`<div class="stat"><span>${x[0]}</span><b>${Number(x[1]||0).toLocaleString("ar-EG")}</b></div>`).join("");
+  }catch(e){document.querySelector("#stats").innerHTML='<div class="muted">شغّل قاعدة البيانات والـAPI لعرض الإحصاءات.</div>'}
+}
+async function searchProducts(){
+  const q=document.querySelector("#q").value.trim();
+  const box=document.querySelector("#items"); box.innerHTML='<div class="empty">جارٍ البحث…</div>';
+  try{
+    const data=await fetch(api+"/api/v1/products/search?q="+encodeURIComponent(q)+"&limit=50").then(r=>r.json());
+    box.innerHTML=data.items.length?data.items.map(x=>`
+      <div class="item" onclick="openProduct('${esc(x.variant_id)}')">
+        <b>${esc(x.canonical_name)}</b>
+        <small>${esc(x.section)} · ${esc(x.brand)} · ${x.cash_offer_count||0} سعر · ${x.installment_plan_count||0} خطة</small>
+      </div>`).join(""):'<div class="empty">لا توجد نتائج</div>';
+  }catch(e){box.innerHTML='<div class="empty">تعذر الاتصال بالـAPI</div>'}
+}
+async function openProduct(id){
+  const box=document.querySelector("#product"); box.innerHTML='<div class="empty">جارٍ التحميل…</div>';
+  const d=await fetch(api+"/api/v1/products/"+encodeURIComponent(id)+"/comparison?include_unpriced=true").then(r=>r.json());
+  const p=d.product;
+  box.innerHTML=`
+    <div><span class="pill">${esc(p.section||"منتج")}</span><h2>${esc(p.canonical_name)}</h2>
+    <div class="muted">${esc(p.brand)} · ${esc(p.model)} · ${esc(p.variant_name)}</div></div>
+    <div class="tabs"><button class="active" id="cashBtn" onclick="showTab('cash')">الكاش (${d.cash_offers.length})</button>
+    <button id="instBtn" onclick="showTab('inst')">التقسيط (${d.installment_plans.length})</button></div>
+    <div id="cashTab">${cashTable(d.cash_offers)}</div><div id="instTab" style="display:none">${instTable(d.installment_plans)}</div>`;
+}
+function cashTable(rows){
+  if(!rows.length)return '<div class="empty">لا توجد عروض مرتبطة بعد</div>';
+  return `<table><thead><tr><th>المتجر</th><th>السعر</th><th>الشحن</th><th>الإجمالي</th><th>التوفر</th><th>الحداثة</th></tr></thead><tbody>
+  ${rows.map(x=>`<tr><td><b>${esc(x.store_name)}</b><br><small>${esc(x.seller_name||"")}</small></td><td>${fmt(x.cash_price)}</td>
+  <td>${fmt(x.shipping_cost)}</td><td><b>${fmt(x.comparable_total)}</b></td><td>${esc(x.availability||"—")}</td>
+  <td><span class="pill ${x.computed_freshness==='fresh'?'':'warn'}">${esc(x.computed_freshness)}</span></td></tr>`).join("")}</tbody></table>`;
+}
+function instTable(rows){
+  if(!rows.length)return '<div class="empty">لم تُرصد خطط تقسيط فعلية بعد</div>';
+  return `<table><thead><tr><th>المتجر/الجهة</th><th>المدة</th><th>القسط</th><th>المقدم</th><th>الرسوم</th><th>الإجمالي</th><th>الوصف</th></tr></thead><tbody>
+  ${rows.map(x=>`<tr><td><b>${esc(x.store_name)}</b><br><small>${esc(x.provider_name||x.bank_or_card||"")}</small></td>
+  <td>${x.months||"—"} شهر</td><td>${fmt(x.periodic_payment)}</td><td>${fmt(x.down_payment)}</td><td>${fmt(x.admin_fees)}</td>
+  <td>${fmt(x.total_published||x.total_calculated)}</td><td>${x.starting_from_only?'<span class="pill warn">يبدأ من</span>':esc(x.completeness||"")}</td></tr>`).join("")}</tbody></table>`;
+}
+function showTab(t){
+  document.querySelector("#cashTab").style.display=t==="cash"?"block":"none";
+  document.querySelector("#instTab").style.display=t==="inst"?"block":"none";
+  document.querySelector("#cashBtn").classList.toggle("active",t==="cash");
+  document.querySelector("#instBtn").classList.toggle("active",t==="inst");
+}
+document.querySelector("#q").addEventListener("keydown",e=>{if(e.key==="Enter")searchProducts()});
+loadStats();
+</script>
+</body>
+</html>

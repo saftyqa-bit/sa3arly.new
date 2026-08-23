@@ -1,0 +1,55 @@
+{
+  "indexes": [],
+  "fieldOverrides": [
+    {
+      "collectionGroup": "page_cache",
+      "fieldPath": "parsed_payload",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "cash_offers",
+      "fieldPath": "raw_payload",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "installment_plans",
+      "fieldPath": "raw_payload",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "cash_offer_history",
+      "fieldPath": "snapshot",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "installment_plan_history",
+      "fieldPath": "snapshot",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "mappings",
+      "fieldPath": "connector_config",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "comparison_docs",
+      "fieldPath": "cash_offers",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "comparison_docs",
+      "fieldPath": "installment_plans",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "comparison_summaries",
+      "fieldPath": "cash_offers",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "comparison_summaries",
+      "fieldPath": "installment_plans",
+      "indexes": []
+    }
+  ]
+}

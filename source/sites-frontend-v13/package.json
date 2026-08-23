@@ -1,0 +1,33 @@
+{
+  "name": "sa3arly-hourly-price-engine",
+  "version": "0.7.0",
+  "private": true,
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "install:ci": "bash scripts/install-ci.sh",
+    "dev": "next dev",
+    "build": "bash scripts/build-verified.sh",
+    "start": "node .next/standalone/server.js",
+    "test": "npm run build && bash scripts/test-rendered-contracts.sh",
+    "test:rendered": "bash scripts/test-rendered-contracts.sh",
+    "validate:artifact": "bash scripts/validate-artifact.sh",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "next": "16.2.6",
+    "react": "19.2.6",
+    "react-dom": "19.2.6"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.2.1",
+    "@types/node": "22.19.19",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "tailwindcss": "4.2.1",
+    "typescript": "5.9.3"
+  },
+  "type": "module",
+  "displayName": "سعرلي"
+}

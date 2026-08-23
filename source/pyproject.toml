@@ -1,0 +1,18 @@
+[project]
+name = "sa3arly-price-engine"
+version = "0.6.1"
+description = "Egyptian catalog-discovery, cash-price, and installment comparison engine"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501"]

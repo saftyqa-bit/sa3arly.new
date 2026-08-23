@@ -1,0 +1,28 @@
+بيانات نشر سعرلي — PostgreSQL / تحديث ساعي
+=======================================
+
+القيم الافتراضية المعتمدة:
+- PROJECT_ID=sa3arly-prod-972741
+- REGION=europe-west1
+- BOT_CONTACT_URL=https://sa3arly.com/bot
+- ALLOWED_ORIGINS=https://sa3arly.com
+- DB_INSTANCE=sa3arly-postgres
+- Cloud SQL edition=ENTERPRISE
+- DB_CPU=1
+- DB_MEMORY=3840MB
+- Cron: 0 * * * *
+- Timezone: Africa/Cairo
+
+DEPLOY_SA3ARLY_CLOUD_SHELL.sh يولد DB_PASSWORD قويًا داخل الذاكرة إذا لم
+تُمرره، ويحفظ DATABASE_URL في Secret Manager. لا تطبع كلمة المرور ولا ترسلها.
+
+النطاق التشغيلي:
+- 2,332 ربطًا معتمدًا.
+- 1,149 مجموعة URL فعلية بعد ترحيل الروابط المباشرة المكتشفة.
+- توزيع 45 دقيقة، Worker واحدة، وثلاث محاولات للمهمة.
+
+النشر يترك الجمع PAUSED. التفعيل منفصل ويتطلب:
+COST_CONTROLS_CONFIRMED=1 bash START_SA3ARLY_COLLECTION.sh
+
+Cloud SQL مورد دائم التشغيل وتكلفته مستقلة عن سقف Cloud Run، لذلك يجب إنشاء
+Budget عام للمشروع بالإضافة إلى مراقبة Cloud Run.

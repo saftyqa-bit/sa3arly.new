@@ -1,0 +1,75 @@
+name: Inspect production price queue
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  inspect:
+    name: Read bounded price queue state
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    steps:
+      - id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: sa3arly-prod-972741
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v3
+        with:
+          project_id: sa3arly-prod-972741
+          version: ">= 540.0.0"
+
+      - name: Print queue and oldest task delivery state
+        run: |
+          set -euo pipefail
+          gcloud tasks queues describe sa3arly-scrape \
+            --project=sa3arly-prod-972741 --location=europe-west1 \
+            --format=json > "$RUNNER_TEMP/price-queue.json"
+          gcloud tasks list --queue=sa3arly-scrape \
+            --project=sa3arly-prod-972741 --location=europe-west1 \
+            --sort-by=scheduleTime --limit=50 --format=json \
+            > "$RUNNER_TEMP/price-tasks.json"
+          python3 - "$RUNNER_TEMP/price-queue.json" "$RUNNER_TEMP/price-tasks.json" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          queue = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          tasks = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8") or "[]")
+
+          def attempt(value):
+              value = value or {}
+              return {
+                  "dispatchTime": value.get("dispatchTime"),
+                  "responseTime": value.get("responseTime"),
+                  "responseCode": (value.get("responseStatus") or {}).get("code"),
+              }
+
+          result = {
+              "queue": {
+                  "state": queue.get("state"),
+                  "rateLimits": queue.get("rateLimits"),
+                  "retryConfig": queue.get("retryConfig"),
+              },
+              "listedTaskCount": len(tasks),
+              "oldestTasks": [
+                  {
+                      "name": str(task.get("name") or "").rsplit("/", 1)[-1],
+                      "scheduleTime": task.get("scheduleTime"),
+                      "dispatchCount": task.get("dispatchCount"),
+                      "responseCount": task.get("responseCount"),
+                      "firstAttempt": attempt(task.get("firstAttempt")),
+                      "lastAttempt": attempt(task.get("lastAttempt")),
+                  }
+                  for task in tasks[:25]
+              ],
+          }
+          print("PRICE_QUEUE_INSPECTION=" + json.dumps(result, sort_keys=True))
+          PY

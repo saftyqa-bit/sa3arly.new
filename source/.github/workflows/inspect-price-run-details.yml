@@ -1,0 +1,180 @@
+name: Inspect price run details
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Price run UUID to inspect
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  inspect:
+    name: Aggregate bounded price-run diagnostics
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    steps:
+      - id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: sa3arly-prod-972741
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v3
+        with:
+          project_id: sa3arly-prod-972741
+          version: ">= 540.0.0"
+
+      - id: runtime
+        name: Resolve production services
+        run: |
+          set -euo pipefail
+          run_id='${{ inputs.run_id }}'
+          [[ "$run_id" =~ ^[0-9a-fA-F-]{36}$ ]]
+          worker_url="$(gcloud run services describe sa3arly-worker \
+            --project=sa3arly-prod-972741 --region=europe-west1 \
+            --format='value(status.url)')"
+          api_url="$(gcloud run services describe sa3arly-api \
+            --project=sa3arly-prod-972741 --region=europe-west1 \
+            --format='value(status.url)')"
+          [[ "$worker_url" == https://* ]]
+          [[ "$api_url" == https://* ]]
+          echo "worker_url=$worker_url" >> "$GITHUB_OUTPUT"
+          echo "api_url=$api_url" >> "$GITHUB_OUTPUT"
+
+      - id: invoke_auth
+        name: Mint a one-use worker identity token
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: sa3arly-prod-972741
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+          token_format: id_token
+          id_token_audience: ${{ steps.runtime.outputs.worker_url }}
+
+      - name: Fetch every bounded task page and aggregate by store
+        env:
+          RUN_ID: ${{ inputs.run_id }}
+          WORKER_URL: ${{ steps.runtime.outputs.worker_url }}
+          API_URL: ${{ steps.runtime.outputs.api_url }}
+          ID_TOKEN: ${{ steps.invoke_auth.outputs.id_token }}
+        run: |
+          set -euo pipefail
+          pages="$RUNNER_TEMP/price-run-pages"
+          mkdir -p "$pages"
+          offset=0
+          while true; do
+            page="$pages/$(printf '%06d' "$offset").json"
+            curl --fail --silent --show-error --max-time 60 \
+              --retry 8 --retry-all-errors --retry-delay 2 --retry-max-time 120 \
+              --header "Authorization: Bearer $ID_TOKEN" \
+              "$WORKER_URL/internal/runs/$RUN_ID?limit=500&offset=$offset" \
+              > "$page"
+            returned="$(jq -r '.pagination.returned_task_rows // 0' "$page")"
+            has_more="$(jq -r '.pagination.has_more // false' "$page")"
+            [[ "$returned" -ge 0 && "$returned" -le 500 ]]
+            if [[ "$has_more" != 'true' ]]; then
+              break
+            fi
+            [[ "$returned" -gt 0 ]]
+            offset=$((offset + returned))
+            sleep 1
+          done
+          curl --fail --silent --show-error --max-time 30 \
+            --retry 5 --retry-all-errors --retry-delay 2 --retry-max-time 60 \
+            "$API_URL/api/v1/stores?limit=500" \
+            > "$RUNNER_TEMP/public-stores.json"
+
+          python3 - "$pages" "$RUNNER_TEMP/public-stores.json" <<'PY'
+          import json
+          import sys
+          from collections import Counter, defaultdict
+          from pathlib import Path
+
+          pages = Path(sys.argv[1])
+          stores_payload = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+          store_names = {
+              str(row.get("store_id")): row.get("name")
+              for row in stores_payload.get("items", [])
+          }
+          status_counts = Counter()
+          error_counts = Counter()
+          stores = defaultdict(
+              lambda: {
+                  "tasks": 0,
+                  "success": 0,
+                  "failed": 0,
+                  "retryable_failed": 0,
+                  "cash_updates": 0,
+                  "errors": Counter(),
+              }
+          )
+          run = None
+          total_rows = 0
+          for page_path in sorted(pages.glob("*.json")):
+              payload = json.loads(page_path.read_text(encoding="utf-8"))
+              run = run or payload.get("run") or {}
+              for task in payload.get("tasks", []):
+                  total_rows += 1
+                  status = str(task.get("status") or "unknown")
+                  error = str(task.get("error_code") or "none")
+                  store_id = str(task.get("store_id") or "unknown")
+                  status_counts[status] += 1
+                  if error != "none":
+                      error_counts[error] += 1
+                  row = stores[store_id]
+                  row["tasks"] += 1
+                  row[status] = int(row.get(status) or 0) + 1
+                  row["cash_updates"] += int(task.get("cash_updates") or 0)
+                  if error != "none":
+                      row["errors"][error] += 1
+
+          affected_stores = []
+          for store_id, row in stores.items():
+              affected_stores.append(
+                  {
+                      "store_id": store_id,
+                      "store_name": store_names.get(store_id),
+                      "tasks": row["tasks"],
+                      "success": row["success"],
+                      "failed": row["failed"],
+                      "retryable_failed": row["retryable_failed"],
+                      "cash_updates": row["cash_updates"],
+                      "errors": dict(row["errors"].most_common()),
+                  }
+              )
+          affected_stores.sort(
+              key=lambda row: (-row["failed"], -row["tasks"], row["store_id"])
+          )
+          summary = {
+              "run": {
+                  key: (run or {}).get(key)
+                  for key in (
+                      "run_id",
+                      "status",
+                      "started_at",
+                      "completed_at",
+                      "queued_task_count",
+                      "completed_task_count",
+                      "successful_task_count",
+                      "failed_task_count",
+                      "cash_updates",
+                      "metadata",
+                  )
+              },
+              "task_rows": total_rows,
+              "task_status_counts": dict(status_counts.most_common()),
+              "error_code_counts": dict(error_counts.most_common()),
+              "affected_store_count": sum(
+                  1 for row in affected_stores if row["failed"]
+              ),
+              "stores": affected_stores,
+          }
+          print("PRICE_RUN_DIAGNOSTIC=" + json.dumps(summary, ensure_ascii=False))
+          PY

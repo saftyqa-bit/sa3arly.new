@@ -1,0 +1,144 @@
+name: Diagnose catalog discovery TypeError
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/diagnose-catalog-typeerror.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  issues: write
+
+jobs:
+  diagnose:
+    name: Read recent worker exception traces
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    steps:
+      - name: Open diagnostic issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          title="Catalog TypeError diagnostic: run $GITHUB_RUN_ID"
+          body="Starting a bounded, read-only worker log diagnostic. Run: https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          issue_number="$(
+            gh issue list --repo "$GITHUB_REPOSITORY" --state all \
+              --search "$GITHUB_RUN_ID in:title" --limit 100 \
+              --json number,title \
+              | jq -r --arg title "$title" \
+                'map(select(.title == $title)) | first | .number // empty'
+          )"
+          if [[ -n "$issue_number" ]]; then
+            gh issue reopen "$issue_number" --repo "$GITHUB_REPOSITORY" || true
+            gh issue edit "$issue_number" --repo "$GITHUB_REPOSITORY" --body "$body"
+          else
+            issue_url="$(gh issue create \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$title" \
+              --body "$body")"
+            issue_number="${issue_url##*/}"
+          fi
+          echo "DIAGNOSTIC_ISSUE=$issue_number" >> "$GITHUB_ENV"
+
+      - id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: sa3arly-prod-972741
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v3
+        with:
+          project_id: sa3arly-prod-972741
+          version: ">= 540.0.0"
+
+      - name: Publish a bounded catalog exception trace
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          raw="$RUNNER_TEMP/sa3arly-worker-errors.json"
+          report="$RUNNER_TEMP/catalog-typeerror-report.md"
+
+          gcloud logging read \
+            'resource.type="cloud_run_revision" AND resource.labels.service_name="sa3arly-worker" AND severity>=ERROR' \
+            --project=sa3arly-prod-972741 \
+            --freshness=2h \
+            --order=desc \
+            --limit=200 \
+            --format=json > "$raw"
+
+          python3 - "$raw" "$report" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          source = Path(sys.argv[1])
+          destination = Path(sys.argv[2])
+          entries = json.loads(source.read_text(encoding="utf-8") or "[]")
+          selected = []
+
+          for entry in entries:
+              payload = entry.get("jsonPayload") or {}
+              text = "\n".join(
+                  str(value)
+                  for value in (
+                      entry.get("textPayload"),
+                      payload.get("message"),
+                      payload.get("exception"),
+                      payload.get("error"),
+                      payload.get("error_code"),
+                  )
+                  if value
+              )
+              lowered = text.lower()
+              if "catalog discovery" not in lowered and "typeerror" not in lowered:
+                  continue
+              selected.append(
+                  {
+                      "timestamp": entry.get("timestamp"),
+                      "severity": entry.get("severity"),
+                      "revision": (entry.get("resource") or {}).get("labels", {}).get("revision_name"),
+                      "task_id": payload.get("task_id"),
+                      "store_id": payload.get("store_id"),
+                      "error_code": payload.get("error_code"),
+                      "trace": text[:8000],
+                  }
+              )
+              if len(selected) >= 12:
+                  break
+
+          with destination.open("w", encoding="utf-8") as handle:
+              handle.write("Recent bounded Cloud Run worker traces for catalog discovery.\n\n")
+              handle.write(f"Commit: {__import__('os').environ.get('GITHUB_SHA', '')}\n")
+              handle.write(
+                  "Run: https://github.com/"
+                  f"{__import__('os').environ.get('GITHUB_REPOSITORY', '')}"
+                  "/actions/runs/"
+                  f"{__import__('os').environ.get('GITHUB_RUN_ID', '')}\n\n"
+              )
+              handle.write("~~~json\n")
+              json.dump(selected, handle, ensure_ascii=False, indent=2)
+              handle.write("\n~~~\n")
+          PY
+
+          gh issue edit "$DIAGNOSTIC_ISSUE" \
+            --repo "$GITHUB_REPOSITORY" \
+            --body-file "$report"
+
+      - name: Record diagnostic workflow failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh issue edit "$DIAGNOSTIC_ISSUE" \
+            --repo "$GITHUB_REPOSITORY" \
+            --body "The bounded worker-log diagnostic failed before publishing a trace. Run: https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"

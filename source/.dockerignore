@@ -1,0 +1,11 @@
+.git
+.github
+.venv
+__pycache__
+.pytest_cache
+.ruff_cache
+*.log
+data/*.xlsx
+
+# Google GitHub Actions temporary credentials
+gha-creds-*.json

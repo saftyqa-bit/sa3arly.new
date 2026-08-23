@@ -1,0 +1,46 @@
+name: Verify
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check app scripts tests
+      - run: |
+          python scripts/verify_seed.py
+          python scripts/verify_hourly_capacity.py
+          python scripts/verify_catalog_discovery_readiness.py
+      - run: python -m compileall -q app scripts tests
+      - run: pytest
+
+  frontend:
+    name: Frontend build and rendered contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: sites-frontend-v13
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: sites-frontend-v13/package-lock.json
+      - run: npm run install:ci
+      - run: npm run typecheck
+      - run: npm test

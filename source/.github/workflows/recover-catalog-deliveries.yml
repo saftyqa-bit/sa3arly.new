@@ -1,0 +1,88 @@
+name: Recover catalog task deliveries
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: sa3arly-catalog-delivery-recovery
+  cancel-in-progress: false
+
+env:
+  PROJECT_ID: sa3arly-prod-972741
+  REGION: europe-west1
+  WORKER_SERVICE: sa3arly-worker
+
+jobs:
+  recover:
+    name: Recover lost catalog deliveries
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    steps:
+      - id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v3
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          version: ">= 540.0.0"
+
+      - id: runtime
+        name: Resolve the private catalog worker
+        run: |
+          set -euo pipefail
+          worker_url="$(gcloud run services describe "$WORKER_SERVICE" \
+            --project="$PROJECT_ID" --region="$REGION" \
+            --format='value(status.url)')"
+          [[ "$worker_url" == https://* ]]
+          echo "worker_url=$worker_url" >> "$GITHUB_OUTPUT"
+
+      - id: invoke_auth
+        name: Mint a one-use worker identity token
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+          token_format: id_token
+          id_token_audience: ${{ steps.runtime.outputs.worker_url }}
+
+      - name: Recover and verify lost deliveries
+        env:
+          WORKER_URL: ${{ steps.runtime.outputs.worker_url }}
+          ID_TOKEN: ${{ steps.invoke_auth.outputs.id_token }}
+        run: |
+          set -euo pipefail
+          http_code="$(curl --silent --show-error --max-time 600 \
+            --output "$RUNNER_TEMP/catalog-recovery-result.json" \
+            --write-out '%{http_code}' \
+            --header "Authorization: Bearer $ID_TOKEN" \
+            --header 'Content-Type: application/json' \
+            --data '{"limit":500}' \
+            "$WORKER_URL/internal/scheduler/catalog-recovery")"
+          python3 -m json.tool "$RUNNER_TEMP/catalog-recovery-result.json"
+          [[ "$http_code" == '200' ]]
+          python3 - "$RUNNER_TEMP/catalog-recovery-result.json" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          result = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          if result.get("status") not in {"idle", "recovered"}:
+              raise SystemExit(f"Unexpected recovery status: {result.get('status')}")
+          if int(result.get("failed") or 0) != 0:
+              raise SystemExit(f"Recovery enqueue failures: {result.get('failures')}")
+          print(f"CATALOG_RECOVERY_STATUS={result.get('status')}")
+          print(f"CATALOG_RECOVERY_PREPARED={result.get('prepared')}")
+          print(f"CATALOG_RECOVERY_ENQUEUED={result.get('enqueued')}")
+          PY

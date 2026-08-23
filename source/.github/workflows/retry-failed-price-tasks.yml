@@ -1,0 +1,130 @@
+name: Retry failed price tasks only
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: Terminal price-run UUID whose failed URL groups should be retried
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: sa3arly-price-failed-retry
+  cancel-in-progress: false
+
+env:
+  PROJECT_ID: sa3arly-prod-972741
+  REGION: europe-west1
+  API_SERVICE: sa3arly-api
+  WORKER_SERVICE: sa3arly-worker
+  PRICE_QUEUE: sa3arly-scrape
+  WORKER_MAX_INSTANCES: "48"
+  WORKER_CONTAINER_CONCURRENCY: "2"
+  PRICE_MAX_DISPATCHES_PER_SECOND: "12"
+  PRICE_MAX_CONCURRENT_DISPATCHES: "80"
+  PRICE_RETRY_JOB: sa3arly-price-failed-retry
+
+jobs:
+  retry:
+    name: Enqueue only failed URL groups in a new bounded run
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    environment: production
+    steps:
+      - id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v3
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          version: ">= 540.0.0"
+
+      - id: before
+        name: Validate the source run and record production state
+        env:
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_RUN_ID" =~ ^[0-9a-fA-F-]{36}$ ]]
+          api_url="$(gcloud run services describe "$API_SERVICE" \
+            --project="$PROJECT_ID" --region="$REGION" \
+            --format='value(status.url)')"
+          status_json="$(curl --fail --silent --show-error --retry 5 \
+            --retry-delay 2 --max-time 30 "$api_url/api/v1/status")"
+          latest_run_id="$(jq -r '.latest_price_run_id // empty' <<<"$status_json")"
+          latest_run_status="$(jq -r '.latest_price_run_status // empty' <<<"$status_json")"
+          [[ "$latest_run_id" == "$SOURCE_RUN_ID" ]]
+          [[ "$latest_run_status" =~ ^(completed|completed_with_errors|cancelled|enqueue_failed)$ ]]
+          echo "api_url=$api_url" >> "$GITHUB_OUTPUT"
+          echo "previous_run_id=$latest_run_id" >> "$GITHUB_OUTPUT"
+
+      - name: Remove deliveries belonging to the terminal source run and raise bounded capacity
+        run: |
+          set -euo pipefail
+          gcloud run services update "$WORKER_SERVICE" \
+            --project="$PROJECT_ID" --region="$REGION" \
+            --max="$WORKER_MAX_INSTANCES" \
+            --concurrency="$WORKER_CONTAINER_CONCURRENCY" \
+            --update-env-vars="DB_POOL_MIN=1,DB_POOL_MAX=2" --quiet
+          gcloud tasks queues update "$PRICE_QUEUE" \
+            --project="$PROJECT_ID" --location="$REGION" \
+            --max-dispatches-per-second="$PRICE_MAX_DISPATCHES_PER_SECOND" \
+            --max-concurrent-dispatches="$PRICE_MAX_CONCURRENT_DISPATCHES" \
+            --quiet
+          trap 'gcloud tasks queues resume "$PRICE_QUEUE" --project="$PROJECT_ID" --location="$REGION" --quiet || true' EXIT
+          gcloud tasks queues pause "$PRICE_QUEUE" \
+            --project="$PROJECT_ID" --location="$REGION" --quiet
+          gcloud tasks queues purge "$PRICE_QUEUE" \
+            --project="$PROJECT_ID" --location="$REGION" --quiet
+          sleep 60
+          gcloud tasks queues resume "$PRICE_QUEUE" \
+            --project="$PROJECT_ID" --location="$REGION" --quiet
+          trap - EXIT
+
+      - name: Start the failed-only retry outside the worker service
+        env:
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        run: |
+          set -euo pipefail
+          gcloud run jobs execute "$PRICE_RETRY_JOB" \
+            --project="$PROJECT_ID" --region="$REGION" \
+            --args=-m,scripts.retry_failed_price_tasks_job,"$SOURCE_RUN_ID" \
+            --wait
+
+      - name: Verify a new bounded retry run is visible
+        env:
+          API_URL: ${{ steps.before.outputs.api_url }}
+          PREVIOUS_RUN_ID: ${{ steps.before.outputs.previous_run_id }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 18); do
+            status_json="$(curl --fail --silent --show-error --retry 3 \
+              --retry-delay 2 --max-time 30 "$API_URL/api/v1/status")"
+            run_id="$(jq -r '.latest_price_run_id // empty' <<<"$status_json")"
+            run_status="$(jq -r '.latest_price_run_status // empty' <<<"$status_json")"
+            queued="$(jq -r '.latest_price_run_queued_tasks // 0' <<<"$status_json")"
+            if [[ -n "$run_id" && "$run_id" != "$PREVIOUS_RUN_ID" \
+              && "$queued" -gt 0 \
+              && "$run_status" =~ ^(created|enqueuing|queued|running)$ ]]; then
+              echo "$status_json" | jq '{
+                latest_price_run_id,
+                latest_price_run_status,
+                latest_price_run_queued_tasks,
+                latest_price_run_completed_tasks,
+                latest_price_run_task_states
+              }'
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "$status_json" | jq .
+          echo "A new failed-only retry run was not visible." >&2
+          exit 1

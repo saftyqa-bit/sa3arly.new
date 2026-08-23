@@ -1,0 +1,24 @@
+{
+  "$schema": "https://raw.githubusercontent.com/cloudflare/workers-sdk/main/packages/wrangler/config-schema.json",
+  "name": "sa3arly-production-web",
+  "main": "src/index.mjs",
+  "compatibility_date": "2026-08-10",
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [
+    {
+      "pattern": "sa3arly.com/*",
+      "zone_name": "sa3arly.com"
+    },
+    {
+      "pattern": "www.sa3arly.com/*",
+      "zone_name": "sa3arly.com"
+    }
+  ],
+  "vars": {
+    "SA3ARLY_WEB_ORIGIN": "https://sa3arly-web-oitr3qtggq-ew.a.run.app"
+  },
+  "observability": {
+    "enabled": true
+  }
+}

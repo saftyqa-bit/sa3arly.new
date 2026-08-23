@@ -1,0 +1,111 @@
+name: Deploy web preview
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/PREVIEW_DEPLOY_TRIGGER
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  issues: write
+
+concurrency:
+  group: sa3arly-web-preview
+  cancel-in-progress: true
+
+env:
+  PROJECT_ID: sa3arly-prod-972741
+  REGION: europe-west1
+  REPOSITORY: sa3arly
+
+jobs:
+  validate:
+    uses: ./.github/workflows/verify.yml
+
+  deploy-preview:
+    name: Deploy isolated Cloud Run preview
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify Workload Identity variables
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}"
+          test -n "${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}"
+
+      - id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v3
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          version: ">= 540.0.0"
+
+      - name: Build, push, and deploy without changing domain traffic
+        id: deploy
+        continue-on-error: true
+        env:
+          RELEASE_ID: preview-${{ github.run_number }}-${{ github.sha }}
+          SA3ARLY_INTERNAL_TOKEN_ENABLED: "false"
+          SA3ARLY_ADMIN_EMAILS: ""
+        shell: bash
+        run: |
+          set -o pipefail
+          bash scripts/deploy_web_cloud_run.sh 2>&1 | tee /tmp/preview-deploy.log
+
+      - name: Capture preview service state
+        id: state
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          WEB_URL="$(gcloud run services describe sa3arly-web --project="$PROJECT_ID" --region="$REGION" --format='value(status.url)' 2>/dev/null)"
+          REVISION="$(gcloud run services describe sa3arly-web --project="$PROJECT_ID" --region="$REGION" --format='value(status.latestReadyRevisionName)' 2>/dev/null)"
+          TRAFFIC="$(gcloud run services describe sa3arly-web --project="$PROJECT_ID" --region="$REGION" --format='value(status.traffic)' 2>/dev/null)"
+          echo "web_url=${WEB_URL}" >> "$GITHUB_OUTPUT"
+          echo "revision=${REVISION}" >> "$GITHUB_OUTPUT"
+          echo "traffic=${TRAFFIC}" >> "$GITHUB_OUTPUT"
+
+      - name: Report preview result to issue 17
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
+          WEB_URL: ${{ steps.state.outputs.web_url }}
+          REVISION: ${{ steps.state.outputs.revision }}
+          TRAFFIC: ${{ steps.state.outputs.traffic }}
+        shell: bash
+        run: |
+          {
+            echo "## Preview deployment run ${GITHUB_RUN_NUMBER}"
+            echo
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- Deployment outcome: \`${DEPLOY_OUTCOME:-not-started}\`"
+            echo "- Cloud Run URL: \`${WEB_URL:-unavailable}\`"
+            echo "- Ready revision: \`${REVISION:-unavailable}\`"
+            echo "- Traffic: \`${TRAFFIC:-unavailable}\`"
+            echo "- Domain traffic changed: \`NO\`"
+            echo
+            echo "<details><summary>Deployment log tail</summary>"
+            echo
+            echo '```text'
+            tail -n 180 /tmp/preview-deploy.log 2>/dev/null || echo "Deployment step did not produce a log file."
+            echo '```'
+            echo "</details>"
+          } > /tmp/preview-comment.md
+          gh issue comment 17 --repo "$GITHUB_REPOSITORY" --body-file /tmp/preview-comment.md
+
+      - name: Fail workflow when preview deployment failed
+        if: ${{ steps.deploy.outcome != 'success' }}
+        run: exit 1
